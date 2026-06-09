@@ -575,6 +575,9 @@ function loadState(){
       tournamentGenerated=!!s.tournamentGenerated;
       currentGroupRound=s.currentGroupRound||0;
       currentQERound=s.currentQERound||0;
+      // Ensure Quick Entry KO goals are reflected in knockoutScores
+      // (fixes data saved before this sync was introduced)
+      syncKOPlayerScoresToMatchScores();
     }
     const imgs=localStorage.getItem('wc_imgs');
     if(imgs)playerImages=JSON.parse(imgs);
@@ -1697,6 +1700,51 @@ function renderQERoundContent(r){
   return html;
 }
 
+// Sync per-player Quick Entry goals into knockoutScores (match totals).
+// Each player IS their team, so their goals in the round = the match score.
+// This ensures the OBS Final/3rd screen and Results screen populate correctly
+// when scores are entered via Quick Entry rather than the match card inputs.
+function syncKOPlayerScoresToMatchScores(){
+  const qfRnd  = playerRoundScores['ko_qf']  || {};
+  const ko2Rnd = playerRoundScores['ko_ko2'] || {};
+
+  function val(rnd, idx){
+    const v = rnd[String(idx)];
+    return (v !== undefined && v !== '' && v !== null) ? v : '';
+  }
+
+  // --- Quarter-Finals ---
+  ['qf0','qf1'].forEach((key, qi) => {
+    const m = knockout.qf && knockout.qf[qi];
+    if(m && m.home !== null && m.home !== undefined &&
+           m.away !== null && m.away !== undefined){
+      if(!knockoutScores[key]) knockoutScores[key] = {home:'', away:''};
+      knockoutScores[key].home = val(qfRnd, m.home);
+      knockoutScores[key].away = val(qfRnd, m.away);
+    }
+  });
+
+  // Re-derive Final/3rd team assignments from updated QF scores
+  const finHome = getKOWinner('qf0'), finAway = getKOWinner('qf1');
+  const trdHome = getKOLoser('qf0'),  trdAway = getKOLoser('qf1');
+  knockout.final = {home: finHome, away: finAway};
+  knockout.third = {home: trdHome, away: trdAway};
+
+  // --- Final ---
+  if(finHome !== null && finAway !== null){
+    if(!knockoutScores['final']) knockoutScores['final'] = {home:'', away:''};
+    knockoutScores['final'].home = val(ko2Rnd, finHome);
+    knockoutScores['final'].away = val(ko2Rnd, finAway);
+  }
+
+  // --- 3rd Place ---
+  if(trdHome !== null && trdAway !== null){
+    if(!knockoutScores['third']) knockoutScores['third'] = {home:'', away:''};
+    knockoutScores['third'].home = val(ko2Rnd, trdHome);
+    knockoutScores['third'].away = val(ko2Rnd, trdAway);
+  }
+}
+
 function setPlayerRoundScore(storeKey, pIdx, val){
   if(!playerRoundScores[storeKey]) playerRoundScores[storeKey]={};
   const n = parseInt(val);
@@ -1716,6 +1764,12 @@ function setPlayerRoundScore(storeKey, pIdx, val){
       if(match.home === pIdx) groupScores[roundNum][origIdx].home = score;
       if(match.away === pIdx) groupScores[roundNum][origIdx].away = score;
     });
+  }
+
+  // Sync KO Quick Entry player goals into knockoutScores so match cards,
+  // OBS Final/3rd and Results screens update correctly.
+  if(storeKey === 'ko_qf' || storeKey === 'ko_ko2'){
+    syncKOPlayerScoresToMatchScores();
   }
 
   saveState();
@@ -1821,12 +1875,12 @@ function getGroupWinner(g){
 }
 
 function updateKnockoutFromGroups(){
-  // QF1: A winner vs C winner; QF2: B winner vs D winner
   const wA=getGroupWinner(0),wB=getGroupWinner(1),wC=getGroupWinner(2),wD=getGroupWinner(3);
   knockout.qf[0]={home:wA,away:wC};
   knockout.qf[1]={home:wB,away:wD};
-  // Propagate from QF -> SF
-  propagateKnockout();
+  knockout.final={home:getKOWinner('qf0'),away:getKOWinner('qf1')};
+  knockout.third={home:getKOLoser('qf0'),away:getKOLoser('qf1')};
+  updatePotFromKnockout();
   saveState();
 }
 
@@ -1863,11 +1917,12 @@ function getKOMatch(key){
 }
 
 function propagateKnockout(){
-  // QF0: A winner vs C winner, QF1: B winner vs D winner
-  // Final: QF winners play each other; 3rd place: QF losers play each other
+  // Re-derive QF slots from group winners, then set Final/3rd from QF results
+  const wA=getGroupWinner(0),wB=getGroupWinner(1),wC=getGroupWinner(2),wD=getGroupWinner(3);
+  knockout.qf[0]={home:wA,away:wC};
+  knockout.qf[1]={home:wB,away:wD};
   knockout.final={home:getKOWinner('qf0'),away:getKOWinner('qf1')};
   knockout.third={home:getKOLoser('qf0'),away:getKOLoser('qf1')};
-  // Update pot players from QF losers
   updatePotFromKnockout();
 }
 
