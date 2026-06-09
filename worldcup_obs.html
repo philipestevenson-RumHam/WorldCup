@@ -584,7 +584,7 @@ function buildAllRounds(data){
       const s=(roundScores&&(roundScores[origIdx]||roundScores[String(origIdx)]))||{home:'',away:''};
       return {
         home:m.home, away:m.away, group:m.group,
-        hScore:s.home, aScore:s.away,
+        hScore:(s.home??''), aScore:(s.away??''),
         roundIdx:r, matchIdx:origIdx,
         type:'group',
         label:`Group ${['A','B','C','D'][m.group]||'?'} Match`
@@ -602,29 +602,28 @@ function buildAllRounds(data){
   const qfMatches = [
     {
       home:qf0.home, away:qf0.away,
-      hScore:(ks.qf0||{}).home||'', aScore:(ks.qf0||{}).away||'',
+      hScore:((ks.qf0||{}).home??''), aScore:((ks.qf0||{}).away??''),
       key:'qf0', type:'qf', label:'QF1 — Group A vs C'
     },
     {
       home:qf1.home, away:qf1.away,
-      hScore:(ks.qf1||{}).home||'', aScore:(ks.qf1||{}).away||'',
+      hScore:((ks.qf1||{}).home??''), aScore:((ks.qf1||{}).away??''),
       key:'qf1', type:'qf', label:'QF2 — Group B vs D'
     }
   ];
   rounds.push({type:'qf', label:'Quarter-Finals', matches:qfMatches});
 
-  // Final + 3rd place — always add, teams may be null (TBD) until QF scores entered
   const fin  = ko.final ||{home:null,away:null};
   const trd  = ko.third ||{home:null,away:null};
   const finMatches = [
     {
       home:fin.home, away:fin.away,
-      hScore:(ks.final||{}).home||'', aScore:(ks.final||{}).away||'',
+      hScore:((ks.final||{}).home??''), aScore:((ks.final||{}).away??''),
       key:'final', type:'final', label:'🏆 Final'
     },
     {
       home:trd.home, away:trd.away,
-      hScore:(ks.third||{}).home||'', aScore:(ks.third||{}).away||'',
+      hScore:((ks.third||{}).home??''), aScore:((ks.third||{}).away??''),
       key:'third', type:'third', label:'🥉 3rd Place'
     }
   ];
@@ -1175,7 +1174,9 @@ function load(){
     const changed=JSON.stringify(newRounds)!==JSON.stringify(allRounds)||
       JSON.stringify(data.groupScores)!==JSON.stringify(lastData&&lastData.groupScores)||
       JSON.stringify(data.knockoutScores)!==JSON.stringify(lastData&&lastData.knockoutScores)||
-      JSON.stringify(data.playerRoundScores)!==JSON.stringify(lastData&&lastData.playerRoundScores);
+      JSON.stringify(data.knockout)!==JSON.stringify(lastData&&lastData.knockout)||
+      JSON.stringify(data.playerRoundScores)!==JSON.stringify(lastData&&lastData.playerRoundScores)||
+      lastData===null;
 
     lastData=data;
     allRounds=newRounds;
@@ -1438,15 +1439,17 @@ function renderResultsScreen(){
   function koWinner(key){
     const s=ks[key]||{};
     const m=key==='final'?(ko.final||{}):(ko.third||{});
-    if(s.home===''||s.home===undefined||s.away===''||s.away===undefined) return null;
+    if(s.home===''||s.home===undefined||s.home===null||s.away===''||s.away===undefined||s.away===null) return null;
     const h=parseInt(s.home),a=parseInt(s.away);
+    if(isNaN(h)||isNaN(a)) return null;
     if(h>a) return m.home; if(a>h) return m.away; return null;
   }
   function koLoser(key){
     const s=ks[key]||{};
     const m=key==='final'?(ko.final||{}):(ko.third||{});
-    if(s.home===''||s.home===undefined||s.away===''||s.away===undefined) return null;
+    if(s.home===''||s.home===undefined||s.home===null||s.away===''||s.away===undefined||s.away===null) return null;
     const h=parseInt(s.home),a=parseInt(s.away);
+    if(isNaN(h)||isNaN(a)) return null;
     if(h>a) return m.away; if(a>h) return m.home; return null;
   }
 
@@ -1493,27 +1496,29 @@ function renderResultsScreen(){
     ${podiumCard(4,p4,'4th Place',    'pp-4','4', '#5a8a5e')}
   </div>`;
 
-  // Build knocked-out list — everyone not in top 4
+  // Build knocked-out list — only group-stage eliminated players
+  // QF participants are still in the tournament (they play 3rd place or final)
   const top4 = new Set([p1,p2,p3,p4].filter(x=>x!==null));
-  const qfSet = new Set([
+  const qfParticipants = new Set([
     ko.qf&&ko.qf[0]&&ko.qf[0].home, ko.qf&&ko.qf[0]&&ko.qf[0].away,
     ko.qf&&ko.qf[1]&&ko.qf[1].home, ko.qf&&ko.qf[1]&&ko.qf[1].away,
   ].filter(x=>x!==null&&x!==undefined));
 
   const potList=[];
   for(let g=0;g<4;g++){
-    ((groups&&groups[g])||[]).forEach(idx=>{
-      if(top4.has(idx)) return;
-      const elimStage = qfSet.has(idx) ? 'QF' : '';
-      const goals = getPlayerTotalGoals(idx);
-      potList.push({idx, goals, elimStage});
+    const st=calcGroupStandings(g,lastData);
+    st.slice(1).forEach(s=>{
+      if(!qfParticipants.has(s.idx)){
+        const goals=getPlayerTotalGoals(s.idx);
+        potList.push({idx:s.idx,goals});
+      }
     });
   }
   potList.sort((a,b)=>b.goals-a.goals);
 
-  const twoCol = potList.length > 8;
-  const tableStyle = twoCol
-    ? 'display:grid;grid-template-columns:1fr 1fr;gap:clamp(3px,0.4vw,6px);'
+  const cols2 = potList.length > 16 ? 3 : potList.length > 8 ? 2 : 1;
+  const tableStyle = cols2 > 1
+    ? `display:grid;grid-template-columns:repeat(${cols2},1fr);gap:clamp(3px,0.4vw,6px);`
     : 'display:flex;flex-direction:column;gap:clamp(2px,0.35vh,5px);';
 
   let koRows='';
@@ -1534,7 +1539,6 @@ function renderResultsScreen(){
       <span class="ko-lb-rank" style="color:${rankCol}">${pos+1}</span>
       ${miniCrest}
       <span class="ko-lb-name">${esc(name)}</span>
-      <span class="ko-lb-elim">${entry.elimStage}</span>
       ${goalsHtml}
     </div>`;
   });
@@ -1565,10 +1569,10 @@ function renderObsGoalsLeaderboard(){
     group: Math.floor(idx / (numPlayers/4))
   })).sort((a,b) => b.goals !== a.goals ? b.goals - a.goals : a.name.localeCompare(b.name));
 
-  // Two columns if more than 12 players
-  const twoCol = all.length > 12;
-  const gridStyle = twoCol
-    ? 'display:grid;grid-template-columns:1fr 1fr;gap:clamp(4px,0.6vw,10px);'
+  // Two or three columns depending on player count
+  const cols = all.length > 20 ? 3 : all.length > 12 ? 2 : 1;
+  const gridStyle = cols > 1
+    ? `display:grid;grid-template-columns:repeat(${cols},1fr);gap:clamp(3px,0.5vw,8px);`
     : 'display:flex;flex-direction:column;gap:clamp(2px,0.35vh,5px);';
 
   const groupColors = ['var(--ga)','var(--gb)','var(--gc)','var(--gd)'];

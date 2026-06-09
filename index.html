@@ -553,7 +553,7 @@ let activeStandingsTab = 'pts';
 // ══════════════════════════════════════
 function saveState(){
   const s={numPlayers,players,groupSchedule,groupScores,groups,knockout,knockoutScores,
-           potPlayers,potScores,tournamentGenerated,currentGroupRound,playerRoundScores,currentQERound};
+           tournamentGenerated,currentGroupRound,playerRoundScores,currentQERound};
   try{localStorage.setItem('wc_state',JSON.stringify(s));}catch(e){}
   try{localStorage.setItem('wc_imgs',JSON.stringify(playerImages));}catch(e){}
 }
@@ -928,7 +928,8 @@ function generateTournament(){
   playerRoundScores={};
   tournamentGenerated=true;
   currentGroupRound=0;
-  currentQERound=0;
+  currentQERound='draw';
+  writeObsScreen('draw');
   saveState();
 
   document.getElementById('nav-stage-badge').style.display='';
@@ -1871,9 +1872,11 @@ function propagateKnockout(){
 }
 
 function updatePotFromKnockout(){
-  // Add group-stage eliminated players to pot
+  // Pot = everyone who didn't make the top 4 (i.e. group-stage eliminated only)
+  // QF losers play the 3rd place match so they are NOT knocked out
+  // Final losers get 2nd place — also not knocked out
+  // Only group non-winners are truly eliminated early
   const potSet=new Set(potPlayers.map(p=>p.playerIdx));
-  // Group losers (non-winners)
   for(let g=0;g<4;g++){
     const st=calcGroupStandings(g);
     st.slice(1).forEach(s=>{
@@ -1884,15 +1887,6 @@ function updatePotFromKnockout(){
       }
     });
   }
-  // QF losers (go to 3rd place, also in pot)
-  ['qf0','qf1'].forEach(key=>{
-    const loser=getKOLoser(key);
-    if(loser!==null&&!potSet.has(loser)){
-      potPlayers.push({playerIdx:loser,eliminated:'qf'});
-      potSet.add(loser);
-      if(!potScores[loser])potScores[loser]={goals:0,pts:0};
-    }
-  });
 }
 
 function renderKnockout(){
@@ -2135,23 +2129,37 @@ function renderPot(){
 
   updateKnockoutFromGroups();
 
-  if(!potPlayers.length){
+  // Compute knocked-out players fresh — group non-winners only
+  // QF participants (group winners) are still in the tournament
+  const qfParticipants = new Set([
+    knockout.qf&&knockout.qf[0]&&knockout.qf[0].home,
+    knockout.qf&&knockout.qf[0]&&knockout.qf[0].away,
+    knockout.qf&&knockout.qf[1]&&knockout.qf[1].home,
+    knockout.qf&&knockout.qf[1]&&knockout.qf[1].away,
+  ].filter(x=>x!==null&&x!==undefined));
+
+  const knockedOut=[];
+  for(let g=0;g<4;g++){
+    const st=calcGroupStandings(g);
+    st.slice(1).forEach(s=>{
+      if(!qfParticipants.has(s.idx)){
+        knockedOut.push({playerIdx:s.idx,goals:getPlayerTotalGoals(s.idx)});
+      }
+    });
+  }
+  knockedOut.sort((a,b)=>b.goals-a.goals);
+
+  if(!knockedOut.length){
     cont.innerHTML=`<div style="color:var(--muted);padding:2rem;text-align:center">
       No teams eliminated yet. Complete the group stage to populate the knocked-out pot.
     </div>`;
     return;
   }
 
-  // Build pot data with auto-calculated totals from playerRoundScores
-  const potData = potPlayers.map(entry=>({
-    ...entry,
-    goals: getPlayerTotalGoals(entry.playerIdx)
-  })).sort((a,b)=>b.goals-a.goals);
-
   // Winner banner
-  const winner = potData[0];
-  let bannerHtml = '';
-  if(winner && winner.goals > 0){
+  const winner=knockedOut[0];
+  let bannerHtml='';
+  if(winner&&winner.goals>0){
     const wSrc=playerImages[winner.playerIdx]||null;
     const wName=pName(winner.playerIdx);
     const hue=(wName.split('').reduce((a,c)=>a+c.charCodeAt(0),0)*47)%360;
@@ -2169,52 +2177,38 @@ function renderPot(){
     </div>`;
   }
 
+  const perGroup=numPlayers/4, totalR=perGroup-1;
   let html=`<div class="ko-pot-section">
-    <div style="font-family:'Bebas Neue',cursify,cursive;font-size:1.5rem;color:var(--lose);margin-bottom:0.35rem">⚰️ Knocked Out Teams</div>
-    <p style="font-size:0.84rem;color:var(--muted);margin-bottom:1.25rem">Goals are pulled automatically from Quick Entry scores. The top scorer wins the prize!</p>
+    <div style="font-family:'Bebas Neue',cursive;font-size:1.5rem;color:var(--lose);margin-bottom:0.35rem">⚰️ Knocked Out Teams</div>
+    <p style="font-size:0.84rem;color:var(--muted);margin-bottom:1.25rem">Goals pulled from Quick Entry. Top scorer wins the prize!</p>
     <div style="background:rgba(6,22,7,0.9);border:1px solid rgba(239,68,68,0.2);border-radius:12px;overflow:hidden">
       <table class="lb-table">
         <thead><tr>
-          <th style="width:28px">#</th>
-          <th style="width:28px"></th>
+          <th style="width:28px">#</th><th style="width:28px"></th>
           <th class="left">Team</th>
-          <th>Eliminated</th>
           <th>Total Goals</th>`;
-
-  // Add a column per round entered
-  const perGroup=numPlayers/4, totalR=perGroup-1;
   for(let r=0;r<totalR;r++) html+=`<th title="Round ${r+1}">R${r+1}</th>`;
-  html+=`<th title="Quarter-Finals">QF</th><th title="Final">Fin</th>`;
   html+=`</tr></thead><tbody>`;
 
-  potData.forEach((entry,pos)=>{
+  knockedOut.forEach((entry,pos)=>{
     const idx=entry.playerIdx;
     const rc=pos===0?'rank-1':pos===1?'rank-2':pos===2?'rank-3':'rank-n';
-    const elimLabel=entry.eliminated==='group'?'Group Stage':entry.eliminated==='qf'?'Quarter-Final':'Semi-Final';
-    const elimColor=entry.eliminated==='group'?'var(--lose)':entry.eliminated==='qf'?'var(--draw)':'var(--muted)';
-
     html+=`<tr>
       <td><span class="rank-badge ${rc}">${pos+1}</span></td>
       <td>${crestHtml(idx,24,5)}</td>
       <td class="left"><span style="font-weight:700">${esc(pName(idx))}</span></td>
-      <td><span style="font-size:0.75rem;color:${elimColor};font-weight:700">${elimLabel}</span></td>
       <td class="pts-cell" style="color:var(--green)">${entry.goals}</td>`;
-
-    // Per-round cells
     for(let r=0;r<totalR;r++){
-      const v=playerRoundScores[r]&&(playerRoundScores[r][String(idx)]??playerRoundScores[r][idx]);
+      const storeKey=String(r);
+      const v=playerRoundScores[storeKey]&&(playerRoundScores[storeKey][String(idx)]??playerRoundScores[storeKey][idx]);
       const has=v!==undefined&&v!==''&&v!==null;
       html+=`<td style="color:${has?'var(--text)':'var(--muted)'};">${has?v:'–'}</td>`;
     }
-    const qfV=(playerRoundScores['ko_qf']&&(playerRoundScores['ko_qf'][String(idx)]??playerRoundScores['ko_qf'][idx]));
-    const finV=(playerRoundScores['ko_ko2']&&(playerRoundScores['ko_ko2'][String(idx)]??playerRoundScores['ko_ko2'][idx]));
-    html+=`<td style="color:${qfV!==undefined&&qfV!==''?'var(--text)':'var(--muted)'}">${qfV!==undefined&&qfV!==''?qfV:'–'}</td>`;
-    html+=`<td style="color:${finV!==undefined&&finV!==''?'var(--text)':'var(--muted)'}">${finV!==undefined&&finV!==''?finV:'–'}</td>`;
     html+=`</tr>`;
   });
 
   html+='</tbody></table></div></div>';
-  cont.innerHTML = bannerHtml + html;
+  cont.innerHTML=bannerHtml+html;
 }
 
 
