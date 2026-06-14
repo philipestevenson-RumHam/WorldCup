@@ -497,11 +497,7 @@ h1,h2,h3,.display{font-family:'Bebas Neue',cursive;letter-spacing:0.06em;}
     <h1 style="font-size:2rem;color:var(--lose)">⚰️ Knocked Out Pot</h1>
     <p style="color:var(--muted);font-size:0.9rem;margin-top:0.3rem">All eliminated teams — track their scores and award the best-scoring prize!</p>
   </div>
-  <div class="stage-tabs" style="margin-bottom:0">
-    <button class="stage-tab active" data-stab="group" onclick="switchPotTab('group')">⚰️ Group Stage</button>
-    <button class="stage-tab" data-stab="qf" onclick="switchPotTab('qf')">⚔️ Quarter-Finals</button>
-  </div>
-  <div style="padding-top:1rem" id="pot-content"></div>
+  <div id="pot-content"></div>
 </div>
 
 </div><!-- /wrap -->
@@ -525,30 +521,20 @@ let groupScores = {};
 let groups = [[], [], [], []]; // groups[0]=A, groups[1]=B, groups[2]=C, groups[3]=D
 
 // Knockout: stored as objects with playerIdx (null = TBD)
-// QF: A1vB2, B1vA2, C1vD2, D1vC2
-// SF: QF1w v QF2w, QF3w v QF4w
-// Final: SF1w v SF2w  |  3rd: SF1l v SF2l
 let knockout = {
   qf: [
-    {home:null,away:null}, // QF1: A1 vs B2
-    {home:null,away:null}, // QF2: B1 vs A2
-    {home:null,away:null}, // QF3: C1 vs D2
-    {home:null,away:null}, // QF4: D1 vs C2
+    {home:null,away:null}, // QF1: A winner vs C winner
+    {home:null,away:null}, // QF2: B winner vs D winner
   ],
   sf: [
-    {home:null,away:null}, // SF1: QF1w vs QF2w
-    {home:null,away:null}, // SF2: QF3w vs QF4w
+    {home:null,away:null}, // SF1: winners of QF1 & QF2 — top final
+    {home:null,away:null}, // SF2 (3rd place): losers of QF1 & QF2
   ],
   final: {home:null,away:null},
   third: {home:null,away:null},
 };
-// knockoutScores: {qf0,qf1,qf2,qf3, sf0,sf1, final,third}
+// knockoutScores: {qf0:{home,away}, qf1:{...}, sf0, sf1, final, third}
 let knockoutScores = {};
-
-// Tiebreakers: manually selected winners for draws/group ties
-// KO tiebreakers: {qf0, qf1, qf2, qf3, sf0, sf1, final, third} -> playerIdx of winner
-// Group tiebreakers: {'group-0-1-2': winnerIdx} key = 'group-{g}-{idx1}-{idx2}'
-let tiebreakers = {};
 
 // Knocked out pot: player indices + their extra "pot" scores
 let potPlayers = []; // [{playerIdx, eliminated:'group'|'qf'|'sf'}]
@@ -567,7 +553,6 @@ let activeStandingsTab = 'pts';
 // ══════════════════════════════════════
 function saveState(){
   const s={numPlayers,players,groupSchedule,groupScores,groups,knockout,knockoutScores,
-           tiebreakers,
            tournamentGenerated,currentGroupRound,playerRoundScores,currentQERound};
   try{localStorage.setItem('wc_state',JSON.stringify(s));}catch(e){}
   try{localStorage.setItem('wc_imgs',JSON.stringify(playerImages));}catch(e){}
@@ -582,9 +567,8 @@ function loadState(){
       groupSchedule=s.groupSchedule||[];
       groupScores=s.groupScores||{};
       groups=s.groups||[[],[],[],[]];
-      knockout=s.knockout||{qf:[{home:null,away:null},{home:null,away:null},{home:null,away:null},{home:null,away:null}],sf:[{home:null,away:null},{home:null,away:null}],final:{home:null,away:null},third:{home:null,away:null}};
+      knockout=s.knockout||{qf:[{home:null,away:null},{home:null,away:null}],sf:[{home:null,away:null},{home:null,away:null}],final:{home:null,away:null},third:{home:null,away:null}};
       knockoutScores=s.knockoutScores||{};
-      tiebreakers=s.tiebreakers||{};
       potPlayers=s.potPlayers||[];
       potScores=s.potScores||{};
       playerRoundScores=s.playerRoundScores||{};
@@ -594,7 +578,6 @@ function loadState(){
       // Ensure Quick Entry KO goals are reflected in knockoutScores
       // (fixes data saved before this sync was introduced)
       syncKOPlayerScoresToMatchScores();
-      if(tournamentGenerated) updateKnockoutFromGroups();
     }
     const imgs=localStorage.getItem('wc_imgs');
     if(imgs)playerImages=JSON.parse(imgs);
@@ -668,7 +651,7 @@ function switchGroupTab(id){
   if(id==='fixtures')renderGroupFixtures();
   if(id==='score-entry'){
     renderGroupRoundBar();
-    if(currentGroupRound==='qf'||currentGroupRound==='sf'||currentGroupRound==='final') renderKORound(currentGroupRound);
+    if(currentGroupRound==='qf'||currentGroupRound==='final') renderKORound(currentGroupRound);
     else renderGroupRound(currentGroupRound);
   }
 }
@@ -938,14 +921,12 @@ function generateTournament(){
 
   // Reset knockout
   knockout={
-    qf:[{home:null,away:null},{home:null,away:null},{home:null,away:null},{home:null,away:null}],
+    qf:[{home:null,away:null},{home:null,away:null}],
     sf:[{home:null,away:null},{home:null,away:null}],
     final:{home:null,away:null},
     third:{home:null,away:null}
   };
-  knockoutScores={qf0:{home:'',away:''},qf1:{home:'',away:''},qf2:{home:'',away:''},qf3:{home:'',away:''},
-                  sf0:{home:'',away:''},sf1:{home:'',away:''},final:{home:'',away:''},third:{home:'',away:''}};
-  tiebreakers={};
+  knockoutScores={qf0:{home:'',away:''},qf1:{home:'',away:''},sf0:{home:'',away:''},sf1:{home:'',away:''},final:{home:'',away:''},third:{home:'',away:''}};
   potPlayers=[];potScores={};
   playerRoundScores={};
   tournamentGenerated=true;
@@ -963,7 +944,7 @@ function generateTournament(){
 function resetTournament(){
   if(!confirm('Reset the entire tournament? All scores will be lost.'))return;
   groupSchedule=[];groupScores={};groups=[[],[],[],[]];
-  knockout={qf:[{home:null,away:null},{home:null,away:null},{home:null,away:null},{home:null,away:null}],sf:[{home:null,away:null},{home:null,away:null}],final:{home:null,away:null},third:{home:null,away:null}};
+  knockout={qf:[{home:null,away:null},{home:null,away:null}],sf:[{home:null,away:null},{home:null,away:null}],final:{home:null,away:null},third:{home:null,away:null}};
   knockoutScores={};potPlayers=[];potScores={};
   playerRoundScores={};
   tournamentGenerated=false;currentGroupRound=0;currentQERound=0;
@@ -984,46 +965,31 @@ function fillDummyGroups(){
     }
   }
 
-  // Work out group winners & runners-up now groupScores is populated
-  const w=[0,1,2,3].map(g=>getGroupWinner(g));
-  const rn=[0,1,2,3].map(g=>getGroupRunner(g));
-  knockout.qf[0]={home:w[0], away:rn[1]}; // A1 vs B2
-  knockout.qf[1]={home:w[1], away:rn[0]}; // B1 vs A2
-  knockout.qf[2]={home:w[2], away:rn[3]}; // C1 vs D2
-  knockout.qf[3]={home:w[3], away:rn[2]}; // D1 vs C2
+  // Work out group winners now groupScores is populated
+  const winners=[0,1,2,3].map(g=>getGroupWinner(g));
+  knockout.qf[0]={home:winners[0],away:winners[2]};
+  knockout.qf[1]={home:winners[1],away:winners[3]};
 
   // QF match scores — no draws — and populate QF quick entry for all players
-  ['qf0','qf1','qf2','qf3'].forEach(key=>{
+  ['qf0','qf1'].forEach(key=>{
     let h=Math.floor(Math.random()*4)+1,a=Math.floor(Math.random()*4)+1;
     while(h===a){h=Math.floor(Math.random()*4)+1;a=Math.floor(Math.random()*4)+1;}
     knockoutScores[key]={home:h,away:a};
   });
+  // Write a random goals score into QF quick entry for every player
   for(let i=0;i<numPlayers;i++){
     setPlayerRoundScore('ko_qf', i, Math.floor(Math.random()*5));
   }
 
-  // SF teams from QF results
-  knockout.sf[0]={home:getKOWinner('qf0'),away:getKOWinner('qf1')};
-  knockout.sf[1]={home:getKOWinner('qf2'),away:getKOWinner('qf3')};
-
-  // SF match scores
-  ['sf0','sf1'].forEach(key=>{
-    let h=Math.floor(Math.random()*4)+1,a=Math.floor(Math.random()*4)+1;
-    while(h===a){h=Math.floor(Math.random()*4)+1;a=Math.floor(Math.random()*4)+1;}
-    knockoutScores[key]={home:h,away:a};
-  });
-  for(let i=0;i<numPlayers;i++){
-    setPlayerRoundScore('ko_sf', i, Math.floor(Math.random()*5));
-  }
-
-  // Final/3rd — derive teams from SF then set scores
-  knockout.final={home:getKOWinner('sf0'),away:getKOWinner('sf1')};
-  knockout.third={home:getKOLoser('sf0'),away:getKOLoser('sf1')};
+  // Final/3rd — derive teams from QF then set scores
+  knockout.final={home:getKOWinner('qf0'),away:getKOWinner('qf1')};
+  knockout.third={home:getKOLoser('qf0'),away:getKOLoser('qf1')};
   ['final','third'].forEach(key=>{
     let h=Math.floor(Math.random()*4)+1,a=Math.floor(Math.random()*4)+1;
     while(h===a){h=Math.floor(Math.random()*4)+1;a=Math.floor(Math.random()*4)+1;}
     knockoutScores[key]={home:h,away:a};
   });
+  // Write a random goals score into Final quick entry for every player
   for(let i=0;i<numPlayers;i++){
     setPlayerRoundScore('ko_ko2', i, Math.floor(Math.random()*5));
   }
@@ -1073,20 +1039,13 @@ function renderGroupRoundBar(){
   // Separator
   const sep=document.createElement('span');
   sep.className='round-sep';rb.appendChild(sep);
-  // QF round button (4 matches now)
-  const qfDone=isKOMatchComplete('qf0')&&isKOMatchComplete('qf1')&&isKOMatchComplete('qf2')&&isKOMatchComplete('qf3');
+  // QF round button
+  const qfDone=isKOMatchComplete('qf0')&&isKOMatchComplete('qf1');
   const qfBtn=document.createElement('button');
   qfBtn.className='round-btn'+(currentGroupRound==='qf'?' active':'')+(qfDone?' complete':'');
   qfBtn.textContent='⚔️ Quarter-Finals';
   qfBtn.onclick=()=>{currentGroupRound='qf';saveState();renderKORound('qf');renderGroupRoundBar();};
   rb.appendChild(qfBtn);
-  // SF round button
-  const sfDone=isKOMatchComplete('sf0')&&isKOMatchComplete('sf1');
-  const sfBtn=document.createElement('button');
-  sfBtn.className='round-btn'+(currentGroupRound==='sf'?' active':'')+(sfDone?' complete':'');
-  sfBtn.textContent='🏟️ Semi-Finals';
-  sfBtn.onclick=()=>{currentGroupRound='sf';saveState();renderKORound('sf');renderGroupRoundBar();};
-  rb.appendChild(sfBtn);
   // Final round button
   const finDone=isKOMatchComplete('final')&&isKOMatchComplete('third');
   const finBtn=document.createElement('button');
@@ -1196,7 +1155,7 @@ function renderGroupRound(r){
 function selectGroupRound(r){
   currentGroupRound=r;
   saveState();
-  if(r==='qf'||r==='sf'||r==='final') renderKORound(r);
+  if(r==='qf'||r==='final') renderKORound(r);
   else renderGroupRound(r);
   renderGroupRoundBar();
 }
@@ -1206,24 +1165,18 @@ function renderKORound(stage){
   const cont=document.getElementById('group-match-content');
   if(!cont)return;
 
+  // Define the two matches for each stage
   const stageMatches = stage==='qf'
     ? [
-        {key:'qf0', label:'Quarter-Final 1', badge:'QF1', homeLabel:'Group A Winner',   awayLabel:'Group B Runner-Up'},
-        {key:'qf1', label:'Quarter-Final 2', badge:'QF2', homeLabel:'Group B Winner',   awayLabel:'Group A Runner-Up'},
-        {key:'qf2', label:'Quarter-Final 3', badge:'QF3', homeLabel:'Group C Winner',   awayLabel:'Group D Runner-Up'},
-        {key:'qf3', label:'Quarter-Final 4', badge:'QF4', homeLabel:'Group D Winner',   awayLabel:'Group C Runner-Up'},
-      ]
-    : stage==='sf'
-    ? [
-        {key:'sf0', label:'Semi-Final 1', badge:'SF1', homeLabel:'QF1 Winner', awayLabel:'QF2 Winner'},
-        {key:'sf1', label:'Semi-Final 2', badge:'SF2', homeLabel:'QF3 Winner', awayLabel:'QF4 Winner'},
+        {key:'qf0', label:'Quarter-Final 1', badge:'QF1', badgeCls:'', homeLabel:'Group A Winner', awayLabel:'Group C Winner'},
+        {key:'qf1', label:'Quarter-Final 2', badge:'QF2', badgeCls:'', homeLabel:'Group B Winner', awayLabel:'Group D Winner'},
       ]
     : [
-        {key:'final', label:'\ud83c\udfc6 Final',     badge:'Final',     homeLabel:'SF1 Winner',     awayLabel:'SF2 Winner'},
-        {key:'third', label:'\ud83e\udd49 3rd Place', badge:'3rd Place', homeLabel:'SF1 Runner-Up', awayLabel:'SF2 Runner-Up'},
+        {key:'final', label:'🏆 Final',       badge:'Final', badgeCls:'', homeLabel:'QF1 Winner', awayLabel:'QF2 Winner'},
+        {key:'third', label:'🥉 3rd Place',    badge:'3rd Place', badgeCls:'', homeLabel:'QF1 Runner-Up', awayLabel:'QF2 Runner-Up'},
       ];
 
-  const stageTitle = stage==='qf' ? '\u2694\ufe0f Quarter-Finals' : stage==='sf' ? '\ud83c\udfdf\ufe0f Semi-Finals' : '\ud83c\udfc6 Final & 3rd Place';
+  const stageTitle = stage==='qf' ? '⚔️ Quarter-Finals' : '🏆 Final & 3rd Place';
 
   let html=`<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem">
     <h2 style="font-family:'Bebas Neue',cursive;font-size:1.6rem">${stageTitle}</h2>
@@ -1246,31 +1199,34 @@ function renderKORound(stage){
     const aBg=aSrc?`style="background-image:url('${aSrc}')"`:'' ;
     const hDis=hIdx===null?'disabled':'';
     const aDis=aIdx===null?'disabled':'';
+
     let rRowTxt='Upcoming', rRowCls='mrr-p';
     if(done){
-      if(hS>aS){rRowTxt=`\ud83c\udfc6 ${esc(hName)} Win`;rRowCls='mrr-w';}
-      else if(hS<aS){rRowTxt=`\ud83c\udfc6 ${esc(aName)} Win`;rRowCls='mrr-w';}
+      if(hS>aS){rRowTxt=`🏆 ${esc(hName)} Win`;rRowCls='mrr-w';}
+      else if(hS<aS){rRowTxt=`🏆 ${esc(aName)} Win`;rRowCls='mrr-w';}
       else{rRowTxt='Draw';rRowCls='mrr-d';}
     }
+
+    // Badge style based on stage
     const badgeStyle=stage==='final'
       ? (key==='final'?'background:rgba(246,201,14,0.15);color:var(--gold)':'background:rgba(205,127,50,0.15);color:#cd7f32')
-      : stage==='sf' ? 'background:rgba(168,85,247,0.15);color:#c084fc'
       : 'background:rgba(246,201,14,0.1);color:var(--gold)';
+
     html+=`<div class="match-card">
       <div class="match-header">
         <span style="font-family:'Bebas Neue',cursive;font-size:0.72rem;letter-spacing:0.1em;padding:0.1em 0.45em;border-radius:3px;${badgeStyle}">${badge}</span>
         <span style="font-weight:700">${esc(label)}</span>
-        <span style="margin-left:auto">${done?'\u2705':'\u23f3'}</span>
+        <span style="margin-left:auto">${done?'✅':'⏳'}</span>
       </div>
       <div class="match-body">
         <div class="team-side">
           <div class="team-side-bg" ${hBg}></div>
           <div class="team-side-inner">
             <div class="team-side-label">Home</div>
-            ${hIdx!==null?crestLarge(hIdx):`<div class="team-crest-wrap" style="background:rgba(255,255,255,0.03)"><span style="font-family:'Bebas Neue',cursive;font-size:0.85rem;color:var(--muted);text-align:center;padding:0.5rem">${esc(homeLabel)}</span></div>`}
+            ${hIdx!==null?crestLarge(hIdx):`<div class="team-crest-wrap" style="background:rgba(255,255,255,0.04)"><span style="font-family:'Bebas Neue',cursive;font-size:0.85rem;color:var(--muted);text-align:center;padding:0.5rem">${esc(homeLabel)}</span></div>`}
             <div class="player-name-badge home-badge">${esc(hName)}</div>
             <div style="display:flex;flex-direction:column;align-items:center;gap:0.12rem;margin-top:0.2rem">
-              <input class="score-input" type="number" min="0" max="99" placeholder="\u2013"
+              <input class="score-input" type="number" min="0" max="99" placeholder="–"
                 value="${sc.home}" ${hDis} oninput="setKOScore('${key}','home',this.value)">
               <div class="score-label">Goals</div>
             </div>
@@ -1278,16 +1234,16 @@ function renderKORound(stage){
         </div>
         <div class="vs-center">
           <div class="vs-label">VS</div>
-          ${done?`<div style="font-family:'Bebas Neue',cursive;font-size:1.2rem;color:var(--gold);line-height:1">${hS}\u2013${aS}</div>`:''}
+          ${done?`<div style="font-family:'Bebas Neue',cursive;font-size:1.2rem;color:var(--gold);line-height:1">${hS}–${aS}</div>`:''}
         </div>
         <div class="team-side">
           <div class="team-side-bg" ${aBg}></div>
           <div class="team-side-inner">
             <div class="team-side-label">Away</div>
-            ${aIdx!==null?crestLarge(aIdx):`<div class="team-crest-wrap" style="background:rgba(255,255,255,0.03)"><span style="font-family:'Bebas Neue',cursive;font-size:0.85rem;color:var(--muted);text-align:center;padding:0.5rem">${esc(awayLabel)}</span></div>`}
+            ${aIdx!==null?crestLarge(aIdx):`<div class="team-crest-wrap" style="background:rgba(255,255,255,0.04)"><span style="font-family:'Bebas Neue',cursive;font-size:0.85rem;color:var(--muted);text-align:center;padding:0.5rem">${esc(awayLabel)}</span></div>`}
             <div class="player-name-badge away-badge">${esc(aName)}</div>
             <div style="display:flex;flex-direction:column;align-items:center;gap:0.12rem;margin-top:0.2rem">
-              <input class="score-input" type="number" min="0" max="99" placeholder="\u2013"
+              <input class="score-input" type="number" min="0" max="99" placeholder="–"
                 value="${sc.away}" ${aDis} oninput="setKOScore('${key}','away',this.value)">
               <div class="score-label">Goals</div>
             </div>
@@ -1299,17 +1255,17 @@ function renderKORound(stage){
   });
 
   html+=`</div>`;
+
+  // Prev/next navigation
   const perGroup=numPlayers/4, totalR=perGroup-1;
   html+=`<div style="display:flex;gap:0.75rem;margin-top:1.25rem;flex-wrap:wrap">`;
   if(stage==='qf')
-    html+=`<button class="btn btn-sec" onclick="selectGroupRound(${totalR-1})">\u2190 Matchday ${totalR}</button>
-           <button class="btn btn-gold" onclick="selectGroupRound('sf')">\ud83c\udfdf\ufe0f Semi-Finals \u2192</button>`;
-  if(stage==='sf')
-    html+=`<button class="btn btn-sec" onclick="selectGroupRound('qf')">\u2190 Quarter-Finals</button>
-           <button class="btn btn-gold" onclick="selectGroupRound('final')">\ud83c\udfc6 Final \u2192</button>`;
+    html+=`<button class="btn btn-sec" onclick="selectGroupRound(${totalR-1})">← Matchday ${totalR}</button>
+           <button class="btn btn-gold" onclick="selectGroupRound('final')">🏆 Final →</button>`;
   if(stage==='final')
-    html+=`<button class="btn btn-sec" onclick="selectGroupRound('sf')">\u2190 Semi-Finals</button>`;
+    html+=`<button class="btn btn-sec" onclick="selectGroupRound('qf')">← Quarter-Finals</button>`;
   html+=`</div>`;
+
   cont.innerHTML=html;
 }
 
@@ -1367,21 +1323,9 @@ function calcGroupStandings(g){
       else{stats[match.home].d++;stats[match.home].pts++;stats[match.away].d++;stats[match.away].pts++;}
     });
   }
-  const sorted = Object.entries(stats).map(([idx,s])=>({
+  return Object.entries(stats).map(([idx,s])=>({
     idx:parseInt(idx),name:pName(parseInt(idx)),...s,gd:s.gf-s.ga
-  })).sort((a,b)=>{
-    if(b.pts!==a.pts) return b.pts-a.pts;
-    if(b.gd!==a.gd)  return b.gd-a.gd;
-    if(b.gf!==a.gf)  return b.gf-a.gf;
-    // Check tiebreaker — 'group-{g}-{minIdx}-{maxIdx}' -> winner
-    const key=`group-${g}-${Math.min(a.idx,b.idx)}-${Math.max(a.idx,b.idx)}`;
-    if(tiebreakers[key]!==undefined){
-      if(tiebreakers[key]===a.idx) return -1;
-      if(tiebreakers[key]===b.idx) return 1;
-    }
-    return a.name.localeCompare(b.name);
-  });
-  return sorted;
+  })).sort((a,b)=>b.pts!==a.pts?b.pts-a.pts:b.gd!==a.gd?b.gd-a.gd:b.gf!==a.gf?b.gf-a.gf:a.name.localeCompare(b.name));
 }
 
 function renderGroupTables(){
@@ -1405,17 +1349,16 @@ function renderGroupTables(){
         </tr></thead><tbody>`;
     st.forEach((s,pos)=>{
       const isWinner=pos===0;
-      const qualifies=pos<2; // Top 2 advance to QF
-      const isElim=pos>=2;
-      const rc=isWinner?'rank-1':(qualifies?'rank-2':(isElim?'rank-ko':'rank-n'));
+      const isElim=pos>=1; // Only winner advances
+      const rc=isWinner?'rank-1':(isElim?'rank-ko':'rank-n');
       const gdStr=s.gd>0?`<span class="gd-pos">+${s.gd}</span>`:s.gd<0?`<span class="gd-neg">${s.gd}</span>`:s.gd;
-      const rowStyle=qualifies?'background:rgba(246,201,14,0.04)':'';
+      const rowStyle=isWinner?'background:rgba(246,201,14,0.04)':'';
       html+=`<tr style="${rowStyle}">
         <td><span class="rank-badge ${rc}">${pos+1}</span></td>
         <td>${crestHtml(s.idx,24,5)}</td>
         <td class="left"><div style="display:flex;align-items:center;gap:0.4rem">
           <span style="font-weight:700">${esc(s.name)}</span>
-          ${qualifies?'<span class="trophy-badge tb-gold" style="font-size:0.6rem;padding:0.08rem 0.3rem">QF</span>':''}
+          ${isWinner?'<span class="trophy-badge tb-gold" style="font-size:0.6rem;padding:0.08rem 0.3rem">QF</span>':''}
         </div></td>
         <td style="color:var(--muted)">${s.p}</td>
         <td style="color:var(--win)">${s.w}</td>
@@ -1450,13 +1393,12 @@ function renderGroupTablesInline(targetId){
           <th>GF</th><th>GA</th><th>GD</th><th>Pts</th>
         </tr></thead><tbody>`;
     st.forEach((s,pos)=>{
-      const qualifies=pos<2;
-      const rc=pos===0?'rank-1':qualifies?'rank-2':'rank-ko';
+      const rc=pos===0?'rank-1':'rank-ko';
       const gdStr=s.gd>0?`<span class="gd-pos">+${s.gd}</span>`:s.gd<0?`<span class="gd-neg">${s.gd}</span>`:s.gd;
-      html+=`<tr${qualifies?' style="background:rgba(246,201,14,0.04)"':''}>
+      html+=`<tr${pos===0?' style="background:rgba(246,201,14,0.04)"':''}>
         <td><span class="rank-badge ${rc}">${pos+1}</span></td>
         <td>${crestHtml(s.idx,22,5)}</td>
-        <td class="left"><span style="font-weight:700">${esc(s.name)}</span>${qualifies?'<span class="trophy-badge tb-gold" style="font-size:0.55rem;padding:0.06rem 0.28rem;margin-left:0.3rem">QF</span>':''}</td>
+        <td class="left"><span style="font-weight:700">${esc(s.name)}</span>${pos===0?'<span class="trophy-badge tb-gold" style="font-size:0.55rem;padding:0.06rem 0.28rem;margin-left:0.3rem">QF</span>':''}</td>
         <td style="color:var(--muted)">${s.p}</td>
         <td style="color:var(--win)">${s.w}</td>
         <td style="color:var(--draw)">${s.d}</td>
@@ -1513,135 +1455,8 @@ function renderGroupFixtures(){
 }
 
 // ══════════════════════════════════════
-// TIEBREAKER LOGIC
+// QUICK ENTRY
 // ══════════════════════════════════════
-
-// Detect group ties affecting 2nd place (and 1st if all tied)
-function detectGroupTies(g){
-  const st = calcGroupStandings(g);
-  const perGroup = numPlayers/4, totalR = perGroup-1;
-  const totalMatches = perGroup*(perGroup-1)/2;
-  // Count played matches in this group
-  let played=0;
-  for(let r=0;r<totalR;r++){
-    groupSchedule.filter(m=>m.round===r&&m.group===g).forEach(match=>{
-      const origIdx=groupSchedule.filter(m=>m.round===r).indexOf(match);
-      const s=groupScores[r]&&groupScores[r][origIdx];
-      if(s&&s.home!==''&&s.home!==undefined&&s.away!==''&&s.away!==undefined) played++;
-    });
-  }
-  if(played<totalMatches) return []; // group not complete
-
-  const ties=[];
-  // Check if 2nd and 3rd are level (affects QF qualification)
-  for(let pos=0;pos<st.length-1;pos++){
-    const a=st[pos], b=st[pos+1];
-    if(a.pts===b.pts && a.gd===b.gd && a.gf===b.gf){
-      // Only flag if it affects a qualification position (1st or 2nd)
-      if(pos<=1){
-        const key=`group-${g}-${Math.min(a.idx,b.idx)}-${Math.max(a.idx,b.idx)}`;
-        if(tiebreakers[key]===undefined){
-          ties.push({key,g,teamA:a,teamB:b,pos});
-        }
-      }
-    }
-  }
-  return ties;
-}
-
-// Detect KO draws needing tiebreaker
-function detectKODraws(){
-  const keys=['qf0','qf1','qf2','qf3','sf0','sf1','final','third'];
-  const draws=[];
-  keys.forEach(key=>{
-    const s=getKOScore(key);
-    if(s.home===''||s.away==='') return;
-    const h=parseInt(s.home), a=parseInt(s.away);
-    const match=getKOMatch(key);
-    if(!match||match.home===null||match.away===null) return;
-    if(h===a && tiebreakers[key]===undefined){
-      draws.push({key,match,scoreH:h,scoreA:a});
-    }
-  });
-  return draws;
-}
-
-// Render tiebreaker panel — appended to Quick Entry round content
-function renderTiebreakerPanel(ties, draws){
-  if(!ties.length && !draws.length) return '';
-
-  let html=`<div style="margin-top:1.5rem;background:rgba(248,113,113,0.08);border:2px solid rgba(248,113,113,0.35);border-radius:12px;padding:1.25rem">
-    <div style="font-family:'Bebas Neue',cursive;font-size:1.3rem;color:var(--lose);margin-bottom:0.25rem">⚡ Tiebreaker Required</div>
-    <p style="font-size:0.82rem;color:var(--muted);margin-bottom:1rem">The following matches could not be automatically resolved. Ask a penalty question and select the winner below.</p>
-    <div style="display:flex;flex-direction:column;gap:0.75rem">`;
-
-  draws.forEach(({key,match,scoreH,scoreA})=>{
-    const hName=pName(match.home), aName=pName(match.away);
-    const hSrc=playerImages[match.home]||null, aSrc=playerImages[match.away]||null;
-    const label=key.startsWith('qf')?`Quarter-Final ${key.slice(2,3)===''?'':parseInt(key.slice(2))+1}`:
-                key.startsWith('sf')?`Semi-Final ${parseInt(key.slice(2))+1}`:
-                key==='final'?'🏆 Final':'🥉 3rd Place';
-    html+=`<div style="background:rgba(6,22,7,0.8);border:1px solid rgba(248,113,113,0.2);border-radius:8px;padding:0.85rem">
-      <div style="font-family:'Bebas Neue',cursive;font-size:0.85rem;color:var(--lose);letter-spacing:0.08em;margin-bottom:0.6rem">${label} — Drawn ${scoreH}–${scoreA}</div>
-      <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center">
-        <span style="font-size:0.8rem;color:var(--muted)">Who wins the penalty?</span>
-        <button class="btn btn-sec btn-sm" onclick="setTiebreaker('${key}',${match.home})">
-          ${hSrc?`<img src="${hSrc}" style="width:16px;height:16px;border-radius:2px;object-fit:cover;vertical-align:middle;margin-right:4px">`:''}${esc(hName)}
-        </button>
-        <button class="btn btn-sec btn-sm" onclick="setTiebreaker('${key}',${match.away})">
-          ${aSrc?`<img src="${aSrc}" style="width:16px;height:16px;border-radius:2px;object-fit:cover;vertical-align:middle;margin-right:4px">`:''}${esc(aName)}
-        </button>
-      </div>
-    </div>`;
-  });
-
-  ties.forEach(({key,g,teamA,teamB,pos})=>{
-    const aName=teamA.name, bName=teamB.name;
-    const aSrc=playerImages[teamA.idx]||null, bSrc=playerImages[teamB.idx]||null;
-    const posLabel=pos===0?'1st/2nd':'2nd/3rd';
-    html+=`<div style="background:rgba(6,22,7,0.8);border:1px solid rgba(248,113,113,0.2);border-radius:8px;padding:0.85rem">
-      <div style="font-family:'Bebas Neue',cursive;font-size:0.85rem;color:var(--lose);letter-spacing:0.08em;margin-bottom:0.6rem">Group ${groupLabel(g)} — ${posLabel} tie (equal Pts, GD, GF)</div>
-      <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center">
-        <span style="font-size:0.8rem;color:var(--muted)">Who wins the penalty?</span>
-        <button class="btn btn-sec btn-sm" onclick="setGroupTiebreaker('${key}',${teamA.idx})">
-          ${aSrc?`<img src="${aSrc}" style="width:16px;height:16px;border-radius:2px;object-fit:cover;vertical-align:middle;margin-right:4px">`:''}${esc(aName)}
-        </button>
-        <button class="btn btn-sec btn-sm" onclick="setGroupTiebreaker('${key}',${teamB.idx})">
-          ${bSrc?`<img src="${bSrc}" style="width:16px;height:16px;border-radius:2px;object-fit:cover;vertical-align:middle;margin-right:4px">`:''}${esc(bName)}
-        </button>
-      </div>
-    </div>`;
-  });
-
-  html+=`</div></div>`;
-  return html;
-}
-
-function setTiebreaker(key, winnerIdx){
-  tiebreakers[key]=winnerIdx;
-  propagateKnockout();
-  saveState();
-  renderQuickEntry();
-  renderGroupStage();
-  updateKnockoutFromGroups();
-}
-
-function setGroupTiebreaker(key, winnerIdx){
-  tiebreakers[key]=winnerIdx;
-  updateKnockoutFromGroups();
-  saveState();
-  renderQuickEntry();
-  renderGroupStage();
-  renderStandings();
-}
-
-function clearTiebreaker(key){
-  delete tiebreakers[key];
-  propagateKnockout();
-  saveState();
-  renderQuickEntry();
-  renderGroupStage();
-}
 // One tab per round. Each tab shows ALL players A-Z with a goals input.
 // Scores are stored in playerRoundScores[round][playerIdx].
 // These feed through to group standings (goals for) and pot tracking.
@@ -1718,10 +1533,10 @@ function renderQuickEntry(){
 }
 
 function getKORoundsForQE(){
+  // Returns ko rounds in order: QF, Final+3rd as separate rounds
   return [
-    {key:'qf',  label:'⚔️ QF'},
-    {key:'sf',  label:'🏟️ SF'},
-    {key:'ko2', label:'🏆 Final'},
+    {key:'qf',  label:'QF'},
+    {key:'ko2', label:'Final'},
   ];
 }
 
@@ -1770,7 +1585,6 @@ function writeObsScreen(r){
   else {
     const ki = r - totalR;
     if(ki===0) screen = 'qf';
-    else if(ki===1) screen = 'sf';
     else       screen = 'final';
   }
   try{ localStorage.setItem('wc_obs_screen', screen); }catch(e){}
@@ -1820,7 +1634,7 @@ function renderQERoundContent(r){
     const ko = koRounds[r - totalR];
     storeKey   = 'ko_'+ko.key;
     roundLabel = ko.label;
-    roundDesc  = ko.key==='qf' ? 'Quarter-Finals' : ko.key==='sf' ? 'Semi-Finals' : 'Final & 3rd Place';
+    roundDesc  = ko.key==='qf' ? 'Quarter-Finals' : 'Final & 3rd Place';
   }
 
   if(!playerRoundScores[storeKey]) playerRoundScores[storeKey] = {};
@@ -1883,47 +1697,8 @@ function renderQERoundContent(r){
   });
 
   html += `</tbody></table></div>`;
-
-  // For the last group round — check for group stage ties
-  if(typeof r === 'number' && r === totalR-1){
-    const allGroupTies = [0,1,2,3].flatMap(g=>detectGroupTies(g));
-    const tiePanelHtml = renderTiebreakerPanel(allGroupTies, []);
-    if(tiePanelHtml) html += tiePanelHtml;
-    else if([0,1,2,3].every(g=>getGroupWinner(g)!==null) && [0,1,2,3].every(g=>getGroupRunner(g)!==null)){
-      html += `<div style="margin-top:1rem;background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.2);border-radius:8px;padding:0.75rem 1rem;font-size:0.85rem;color:var(--win)">
-        ✅ All groups resolved — QF teams confirmed. Move to the ⚔️ QF tab.
-      </div>`;
-    }
-  }
-
-  // For KO rounds — check for draws
-  const koRoundForKey = {'qf':['qf0','qf1','qf2','qf3'], 'sf':['sf0','sf1'], 'ko2':['final','third']};
-  if(typeof r === 'number' && r >= totalR){
-    const koRounds2 = getKORoundsForQE();
-    const ko = koRounds2[r - totalR];
-    if(ko){
-      const keysToCheck = koRoundForKey[ko.key]||[];
-      const draws = detectKODraws().filter(d=>keysToCheck.includes(d.key));
-      // Show any already-resolved tiebreakers with a clear button
-      let resolvedHtml='';
-      keysToCheck.forEach(key=>{
-        if(tiebreakers[key]!==undefined){
-          const m=getKOMatch(key);
-          const w=tiebreakers[key];
-          resolvedHtml+=`<div style="margin-top:0.5rem;display:flex;align-items:center;gap:0.6rem;font-size:0.82rem;color:var(--muted)">
-            ⚡ <strong style="color:var(--win)">${esc(pName(w))}</strong> won the ${key.toUpperCase()} penalty shootout
-            <button class="btn btn-danger btn-sm" onclick="clearTiebreaker('${key}')">✕ Clear</button>
-          </div>`;
-        }
-      });
-      const panelHtml = renderTiebreakerPanel([], draws);
-      if(panelHtml||resolvedHtml) html += (panelHtml||'<div style="margin-top:1rem"></div>') + resolvedHtml;
-    }
-  }
-
   return html;
 }
-
 
 // Sync per-player Quick Entry goals into knockoutScores (match totals).
 // Each player IS their team, so their goals in the round = the match score.
@@ -1931,7 +1706,6 @@ function renderQERoundContent(r){
 // when scores are entered via Quick Entry rather than the match card inputs.
 function syncKOPlayerScoresToMatchScores(){
   const qfRnd  = playerRoundScores['ko_qf']  || {};
-  const sfRnd  = playerRoundScores['ko_sf']  || {};
   const ko2Rnd = playerRoundScores['ko_ko2'] || {};
 
   function val(rnd, idx){
@@ -1939,8 +1713,8 @@ function syncKOPlayerScoresToMatchScores(){
     return (v !== undefined && v !== '' && v !== null) ? v : '';
   }
 
-  // QFs
-  ['qf0','qf1','qf2','qf3'].forEach((key, qi) => {
+  // --- Quarter-Finals ---
+  ['qf0','qf1'].forEach((key, qi) => {
     const m = knockout.qf && knockout.qf[qi];
     if(m && m.home !== null && m.home !== undefined &&
            m.away !== null && m.away !== undefined){
@@ -1950,35 +1724,20 @@ function syncKOPlayerScoresToMatchScores(){
     }
   });
 
-  // Re-derive SF teams from QF results
-  knockout.sf[0]={home:getKOWinner('qf0'), away:getKOWinner('qf1')};
-  knockout.sf[1]={home:getKOWinner('qf2'), away:getKOWinner('qf3')};
-
-  // SFs
-  ['sf0','sf1'].forEach((key, si) => {
-    const m = knockout.sf && knockout.sf[si];
-    if(m && m.home !== null && m.home !== undefined &&
-           m.away !== null && m.away !== undefined){
-      if(!knockoutScores[key]) knockoutScores[key] = {home:'', away:''};
-      knockoutScores[key].home = val(sfRnd, m.home);
-      knockoutScores[key].away = val(sfRnd, m.away);
-    }
-  });
-
-  // Re-derive Final/3rd teams from SF results
-  const finHome = getKOWinner('sf0'), finAway = getKOWinner('sf1');
-  const trdHome = getKOLoser('sf0'),  trdAway = getKOLoser('sf1');
+  // Re-derive Final/3rd team assignments from updated QF scores
+  const finHome = getKOWinner('qf0'), finAway = getKOWinner('qf1');
+  const trdHome = getKOLoser('qf0'),  trdAway = getKOLoser('qf1');
   knockout.final = {home: finHome, away: finAway};
   knockout.third = {home: trdHome, away: trdAway};
 
-  // Final
+  // --- Final ---
   if(finHome !== null && finAway !== null){
     if(!knockoutScores['final']) knockoutScores['final'] = {home:'', away:''};
     knockoutScores['final'].home = val(ko2Rnd, finHome);
     knockoutScores['final'].away = val(ko2Rnd, finAway);
   }
 
-  // 3rd Place
+  // --- 3rd Place ---
   if(trdHome !== null && trdAway !== null){
     if(!knockoutScores['third']) knockoutScores['third'] = {home:'', away:''};
     knockoutScores['third'].home = val(ko2Rnd, trdHome);
@@ -2009,7 +1768,7 @@ function setPlayerRoundScore(storeKey, pIdx, val){
 
   // Sync KO Quick Entry player goals into knockoutScores so match cards,
   // OBS Final/3rd and Results screens update correctly.
-  if(storeKey === 'ko_qf' || storeKey === 'ko_sf' || storeKey === 'ko_ko2'){
+  if(storeKey === 'ko_qf' || storeKey === 'ko_ko2'){
     syncKOPlayerScoresToMatchScores();
   }
 
@@ -2030,7 +1789,6 @@ function setPlayerRoundScore(storeKey, pIdx, val){
   if(activeGroupTab==='fixtures') renderGroupFixtures();
   if(activeGroupTab==='score-entry'){
     if(currentGroupRound==='qf') renderKORound('qf');
-    else if(currentGroupRound==='sf') renderKORound('sf');
     else if(currentGroupRound==='final') renderKORound('final');
     else renderGroupRound(currentGroupRound);
     renderGroupRoundBar();
@@ -2116,24 +1874,12 @@ function getGroupWinner(g){
   return played===totalMatches?st[0].idx:null;
 }
 
-function getGroupRunner(g){
-  const st=calcGroupStandings(g);
-  if(!st.length||st.length<2) return null;
-  if(getGroupWinner(g)===null) return null;
-  return st[1].idx;
-}
-
 function updateKnockoutFromGroups(){
-  const w=[0,1,2,3].map(g=>getGroupWinner(g));
-  const r=[0,1,2,3].map(g=>getGroupRunner(g));
-  knockout.qf[0]={home:w[0], away:r[1]}; // A1 vs B2
-  knockout.qf[1]={home:w[1], away:r[0]}; // B1 vs A2
-  knockout.qf[2]={home:w[2], away:r[3]}; // C1 vs D2
-  knockout.qf[3]={home:w[3], away:r[2]}; // D1 vs C2
-  knockout.sf[0]={home:getKOWinner('qf0'), away:getKOWinner('qf1')};
-  knockout.sf[1]={home:getKOWinner('qf2'), away:getKOWinner('qf3')};
-  knockout.final={home:getKOWinner('sf0'), away:getKOWinner('sf1')};
-  knockout.third={home:getKOLoser('sf0'),  away:getKOLoser('sf1')};
+  const wA=getGroupWinner(0),wB=getGroupWinner(1),wC=getGroupWinner(2),wD=getGroupWinner(3);
+  knockout.qf[0]={home:wA,away:wC};
+  knockout.qf[1]={home:wB,away:wD};
+  knockout.final={home:getKOWinner('qf0'),away:getKOWinner('qf1')};
+  knockout.third={home:getKOLoser('qf0'),away:getKOLoser('qf1')};
   updatePotFromKnockout();
   saveState();
 }
@@ -2148,9 +1894,7 @@ function getKOWinner(key){
   if(!match||match.home===null||match.away===null)return null;
   if(h>a)return match.home;
   if(a>h)return match.away;
-  // Draw — check tiebreaker
-  if(tiebreakers[key]!==undefined) return tiebreakers[key];
-  return null;
+  return null; // draw — shouldn't happen in knockout (user must pick a winner)
 }
 function getKOLoser(key){
   const s=getKOScore(key);
@@ -2160,17 +1904,11 @@ function getKOLoser(key){
   if(!match||match.home===null||match.away===null)return null;
   if(h>a)return match.away;
   if(a>h)return match.home;
-  // Draw — check tiebreaker
-  if(tiebreakers[key]!==undefined){
-    return tiebreakers[key]===match.home ? match.away : match.home;
-  }
   return null;
 }
 function getKOMatch(key){
   if(key==='qf0')return knockout.qf[0];
   if(key==='qf1')return knockout.qf[1];
-  if(key==='qf2')return knockout.qf[2];
-  if(key==='qf3')return knockout.qf[3];
   if(key==='sf0')return knockout.sf[0];
   if(key==='sf1')return knockout.sf[1];
   if(key==='final')return knockout.final;
@@ -2179,26 +1917,24 @@ function getKOMatch(key){
 }
 
 function propagateKnockout(){
-  const w=[0,1,2,3].map(g=>getGroupWinner(g));
-  const r=[0,1,2,3].map(g=>getGroupRunner(g));
-  knockout.qf[0]={home:w[0], away:r[1]};
-  knockout.qf[1]={home:w[1], away:r[0]};
-  knockout.qf[2]={home:w[2], away:r[3]};
-  knockout.qf[3]={home:w[3], away:r[2]};
-  knockout.sf[0]={home:getKOWinner('qf0'), away:getKOWinner('qf1')};
-  knockout.sf[1]={home:getKOWinner('qf2'), away:getKOWinner('qf3')};
-  knockout.final={home:getKOWinner('sf0'), away:getKOWinner('sf1')};
-  knockout.third={home:getKOLoser('sf0'),  away:getKOLoser('sf1')};
+  // Re-derive QF slots from group winners, then set Final/3rd from QF results
+  const wA=getGroupWinner(0),wB=getGroupWinner(1),wC=getGroupWinner(2),wD=getGroupWinner(3);
+  knockout.qf[0]={home:wA,away:wC};
+  knockout.qf[1]={home:wB,away:wD};
+  knockout.final={home:getKOWinner('qf0'),away:getKOWinner('qf1')};
+  knockout.third={home:getKOLoser('qf0'),away:getKOLoser('qf1')};
   updatePotFromKnockout();
 }
 
 function updatePotFromKnockout(){
-  // Pot = teams that finished 3rd or lower in their group (didn't make the QF)
-  // 1st and 2nd in each group advance to the Quarter-Finals
+  // Pot = everyone who didn't make the top 4 (i.e. group-stage eliminated only)
+  // QF losers play the 3rd place match so they are NOT knocked out
+  // Final losers get 2nd place — also not knocked out
+  // Only group non-winners are truly eliminated early
   const potSet=new Set(potPlayers.map(p=>p.playerIdx));
   for(let g=0;g<4;g++){
     const st=calcGroupStandings(g);
-    st.slice(2).forEach(s=>{
+    st.slice(1).forEach(s=>{
       if(!potSet.has(s.idx)){
         potPlayers.push({playerIdx:s.idx,eliminated:'group'});
         potSet.add(s.idx);
@@ -2227,30 +1963,20 @@ function renderKnockout(){
     </div>`;
   }
 
-  // QF Section (4 matches)
+  // QF Section
   html+=`<div class="bracket-section">
     <div class="bracket-title"><span style="color:var(--gold)">⚔️</span> Quarter-Finals</div>
-    <div class="bracket-grid-4">`;
+    <div class="bracket-grid-2">`;
 
   const qfLabels=[
-    {label:'QF1 — A1 vs B2',key:'qf0'},
-    {label:'QF2 — B1 vs A2',key:'qf1'},
-    {label:'QF3 — C1 vs D2',key:'qf2'},
-    {label:'QF4 — D1 vs C2',key:'qf3'},
+    {label:'QF1 — Group A Winner vs Group C Winner',key:'qf0'},
+    {label:'QF2 — Group B Winner vs Group D Winner',key:'qf1'},
   ];
   qfLabels.forEach(({label,key},qi)=>{
     const match=knockout.qf[qi];
     const sc=getKOScore(key);
     html+=renderKOMatch(label,key,match,sc);
   });
-  html+='</div></div>';
-
-  // SF Section (2 matches)
-  html+=`<div class="bracket-section">
-    <div class="bracket-title"><span style="color:#c084fc">🏟️</span> Semi-Finals</div>
-    <div class="bracket-grid-2">`;
-  html+=renderKOMatch('SF1 — QF1 Winner vs QF2 Winner','sf0',knockout.sf[0],getKOScore('sf0'));
-  html+=renderKOMatch('SF2 — QF3 Winner vs QF4 Winner','sf1',knockout.sf[1],getKOScore('sf1'));
   html+='</div></div>';
 
   // Final + 3rd place
@@ -2317,7 +2043,6 @@ function setKOScore(key,side,val){
   // Re-render match cards KO view if that's showing
   if(activeGroupTab==='score-entry'){
     if(currentGroupRound==='qf') renderKORound('qf');
-    else if(currentGroupRound==='sf') renderKORound('sf');
     else if(currentGroupRound==='final') renderKORound('final');
     renderGroupRoundBar();
   }
@@ -2452,16 +2177,6 @@ function getPlayerTotalGoals(pIdx){
   return total;
 }
 
-let activePotTab = 'group';
-
-function switchPotTab(tab){
-  activePotTab = tab;
-  document.querySelectorAll('[data-stab]').forEach(t=>{
-    if(t.closest('#page-pot')) t.classList.toggle('active', t.dataset.stab===tab);
-  });
-  renderPot();
-}
-
 function renderPot(){
   const cont=document.getElementById('pot-content');
   if(!cont)return;
@@ -2469,42 +2184,35 @@ function renderPot(){
 
   updateKnockoutFromGroups();
 
-  let eliminated, title, desc, prizeLabel, emptyMsg;
+  // Compute knocked-out players fresh — group non-winners only
+  // QF participants (group winners) are still in the tournament
+  const qfParticipants = new Set([
+    knockout.qf&&knockout.qf[0]&&knockout.qf[0].home,
+    knockout.qf&&knockout.qf[0]&&knockout.qf[0].away,
+    knockout.qf&&knockout.qf[1]&&knockout.qf[1].home,
+    knockout.qf&&knockout.qf[1]&&knockout.qf[1].away,
+  ].filter(x=>x!==null&&x!==undefined));
 
-  if(activePotTab==='group'){
-    // Anyone who finished 3rd or lower in their group (1st and 2nd advance to the QF)
-    eliminated=[];
-    for(let g=0;g<4;g++){
-      const st=calcGroupStandings(g);
-      st.slice(2).forEach(s=>{
-        eliminated.push({playerIdx:s.idx,goals:getPlayerTotalGoals(s.idx)});
-      });
-    }
-    title='⚰️ Knocked Out — Group Stage';
-    desc='Teams that finished 3rd or lower in their group and did not reach the Quarter-Finals.';
-    prizeLabel='Best of the Knocked Out';
-    emptyMsg='No teams eliminated yet. Complete the group stage to populate this list.';
-  } else {
-    // QF losers — eliminated before the Semi-Finals
-    eliminated=['qf0','qf1','qf2','qf3'].map(k=>getKOLoser(k)).filter(idx=>idx!==null)
-      .map(idx=>({playerIdx:idx,goals:getPlayerTotalGoals(idx)}));
-    title='⚔️ Knocked Out — Quarter-Finals';
-    desc='Teams that lost their Quarter-Final and did not reach the Semi-Finals.';
-    prizeLabel='Best of the QF Losers';
-    emptyMsg='No teams eliminated at the QF stage yet. Complete the Quarter-Finals to populate this list.';
+  const knockedOut=[];
+  for(let g=0;g<4;g++){
+    const st=calcGroupStandings(g);
+    st.slice(1).forEach(s=>{
+      if(!qfParticipants.has(s.idx)){
+        knockedOut.push({playerIdx:s.idx,goals:getPlayerTotalGoals(s.idx)});
+      }
+    });
   }
+  knockedOut.sort((a,b)=>b.goals-a.goals);
 
-  eliminated.sort((a,b)=>b.goals-a.goals);
-
-  if(!eliminated.length){
+  if(!knockedOut.length){
     cont.innerHTML=`<div style="color:var(--muted);padding:2rem;text-align:center">
-      ${emptyMsg}
+      No teams eliminated yet. Complete the group stage to populate the knocked-out pot.
     </div>`;
     return;
   }
 
   // Winner banner
-  const winner=eliminated[0];
+  const winner=knockedOut[0];
   let bannerHtml='';
   if(winner&&winner.goals>0){
     const wSrc=playerImages[winner.playerIdx]||null;
@@ -2513,7 +2221,7 @@ function renderPot(){
     bannerHtml=`<div style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.25);border-radius:12px;padding:1.25rem;margin-bottom:1.25rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
       <div style="font-size:2rem">🏆</div>
       <div>
-        <div style="font-family:'Bebas Neue',cursive;font-size:1rem;color:var(--lose);letter-spacing:0.1em;margin-bottom:0.2rem">${prizeLabel}</div>
+        <div style="font-family:'Bebas Neue',cursive;font-size:1rem;color:var(--lose);letter-spacing:0.1em;margin-bottom:0.2rem">Best of the Knocked Out</div>
         <div style="display:flex;align-items:center;gap:0.75rem">
           ${wSrc?`<img src="${wSrc}" style="width:40px;height:40px;border-radius:6px;object-fit:cover">`:
             `<div style="width:40px;height:40px;border-radius:6px;display:flex;align-items:center;justify-content:center;background:hsl(${hue},40%,14%);font-family:'Bebas Neue',cursive;color:hsl(${hue},60%,60%)">${wName.split(/\s+/).map(w=>w[0]||'').join('').toUpperCase().slice(0,2)}</div>`}
@@ -2526,8 +2234,8 @@ function renderPot(){
 
   const perGroup=numPlayers/4, totalR=perGroup-1;
   let html=`<div class="ko-pot-section">
-    <div style="font-family:'Bebas Neue',cursive;font-size:1.5rem;color:var(--lose);margin-bottom:0.35rem">${title}</div>
-    <p style="font-size:0.84rem;color:var(--muted);margin-bottom:1.25rem">${desc} Goals pulled from Quick Entry. Top scorer wins the prize!</p>
+    <div style="font-family:'Bebas Neue',cursive;font-size:1.5rem;color:var(--lose);margin-bottom:0.35rem">⚰️ Knocked Out Teams</div>
+    <p style="font-size:0.84rem;color:var(--muted);margin-bottom:1.25rem">Goals pulled from Quick Entry. Top scorer wins the prize!</p>
     <div style="background:rgba(6,22,7,0.9);border:1px solid rgba(239,68,68,0.2);border-radius:12px;overflow:hidden">
       <table class="lb-table">
         <thead><tr>
@@ -2535,10 +2243,9 @@ function renderPot(){
           <th class="left">Team</th>
           <th>Total Goals</th>`;
   for(let r=0;r<totalR;r++) html+=`<th title="Round ${r+1}">R${r+1}</th>`;
-  if(activePotTab==='qf') html+=`<th title="Quarter-Final">QF</th>`;
   html+=`</tr></thead><tbody>`;
 
-  eliminated.forEach((entry,pos)=>{
+  knockedOut.forEach((entry,pos)=>{
     const idx=entry.playerIdx;
     const rc=pos===0?'rank-1':pos===1?'rank-2':pos===2?'rank-3':'rank-n';
     html+=`<tr>
@@ -2551,11 +2258,6 @@ function renderPot(){
       const v=playerRoundScores[storeKey]&&(playerRoundScores[storeKey][String(idx)]??playerRoundScores[storeKey][idx]);
       const has=v!==undefined&&v!==''&&v!==null;
       html+=`<td style="color:${has?'var(--text)':'var(--muted)'};">${has?v:'–'}</td>`;
-    }
-    if(activePotTab==='qf'){
-      const qfV=playerRoundScores['ko_qf']&&(playerRoundScores['ko_qf'][String(idx)]??playerRoundScores['ko_qf'][idx]);
-      const hasQf=qfV!==undefined&&qfV!==''&&qfV!==null;
-      html+=`<td style="color:${hasQf?'var(--text)':'var(--muted)'};">${hasQf?qfV:'–'}</td>`;
     }
     html+=`</tr>`;
   });

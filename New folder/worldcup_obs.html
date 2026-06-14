@@ -59,7 +59,6 @@ body::after{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%,
   width:clamp(90px,10vw,140px);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .sb-group{background:rgba(59,158,255,0.12);color:var(--blue);border:1px solid rgba(59,158,255,0.25);}
 .sb-qf{background:rgba(246,201,14,0.12);color:var(--gold);border:1px solid rgba(246,201,14,0.25);}
-.sb-sf{background:rgba(168,85,247,0.12);color:#c084fc;border:1px solid rgba(168,85,247,0.25);}
 .sb-final{background:rgba(246,201,14,0.18);color:var(--gold);border:1px solid rgba(246,201,14,0.4);
   box-shadow:0 0 12px rgba(246,201,14,0.12);}
 
@@ -175,7 +174,6 @@ input[type=range].speed-slider::-moz-range-thumb{width:13px;height:13px;border-r
 .gb-c{background:rgba(34,197,94,0.15);color:var(--gc);}
 .gb-d{background:rgba(245,158,11,0.15);color:var(--gd);}
 .gb-qf{background:rgba(246,201,14,0.15);color:var(--gold);}
-.gb-sf{background:rgba(168,85,247,0.15);color:#c084fc;}
 .gb-fin{background:rgba(246,201,14,0.2);color:var(--gold);}
 .gb-3rd{background:rgba(205,127,50,0.15);color:#cd7f32;}
 
@@ -315,7 +313,7 @@ input[type=range].speed-slider::-moz-range-thumb{width:13px;height:13px;border-r
 .draw-slot.pending .draw-slot-crest{filter:brightness(0.2);}
 /* ── RESULTS SCREEN ── */
 .results-wrap{
-  display:grid;grid-template-columns:1fr 1fr 1fr;
+  display:grid;grid-template-columns:1fr 1fr;
   width:100%;height:100%;gap:clamp(6px,1vw,14px);min-height:0;
 }
 .results-podium{
@@ -364,36 +362,11 @@ input[type=range].speed-slider::-moz-range-thumb{width:13px;height:13px;border-r
   font-size:clamp(0.5rem,0.9vw,0.8rem);color:var(--muted);
   text-transform:uppercase;letter-spacing:0.1em;font-weight:700;
 }
-/* Semi-final eliminated (QF losers) middle column */
-.sf-out-wrap{
-  display:flex;flex-direction:column;gap:clamp(4px,0.7vh,10px);
-  padding:clamp(6px,1vh,14px);min-height:0;
-  border-left:1px solid rgba(255,255,255,0.08);
-  border-right:1px solid rgba(255,255,255,0.08);
-}
-.sf-out-title{
-  font-family:'Bebas Neue',cursive;letter-spacing:0.12em;flex-shrink:0;
-  font-size:clamp(1rem,2.2vw,2rem);color:#c084fc;
-}
-.sf-out-card{
-  flex:1;min-height:0;display:flex;align-items:center;gap:clamp(6px,1vw,14px);
-  background:rgba(6,22,7,0.9);border:1px solid rgba(168,85,247,0.18);
-  border-radius:clamp(6px,0.9vw,12px);padding:clamp(5px,0.8vh,12px) clamp(8px,1.2vw,16px);
-  overflow:hidden;position:relative;
-}
-.sf-out-card-bg{
-  position:absolute;inset:0;background-size:cover;background-position:center;
-  filter:blur(8px) brightness(0.15) saturate(0.4);transform:scale(1.08);z-index:0;
-}
-.sf-out-card-inner{position:relative;z-index:1;display:flex;align-items:center;gap:clamp(6px,1vw,14px);width:100%;min-height:0;}
-.sf-out-pos-badge{
-  font-family:'Bebas Neue',cursive;font-size:clamp(1.2rem,2.6vw,2.4rem);
-  line-height:1;flex-shrink:0;min-width:1.2em;text-align:center;color:#c084fc;
-}
 /* Knocked out leaderboard */
 .ko-lb-wrap{
   display:flex;flex-direction:column;gap:clamp(4px,0.6vh,8px);
   padding:clamp(6px,1vh,14px);min-height:0;overflow:hidden;
+  border-left:1px solid rgba(255,255,255,0.08);
 }
 .ko-lb-title{
   font-family:'Bebas Neue',cursive;letter-spacing:0.12em;flex-shrink:0;
@@ -581,18 +554,7 @@ function calcGroupStandings(g, data){
       else{stats[match.home].d++;stats[match.home].pts++;stats[match.away].d++;stats[match.away].pts++;}
     });
   }
-  const tb = (data&&data.tiebreakers)||{};
-  return Object.values(stats).map(s=>({...s, gd:s.gf-s.ga})).sort((a,b)=>{
-    if(b.pts!==a.pts) return b.pts-a.pts;
-    if(b.gd!==a.gd)  return b.gd-a.gd;
-    if(b.gf!==a.gf)  return b.gf-a.gf;
-    const key=`group-${g}-${Math.min(a.idx,b.idx)}-${Math.max(a.idx,b.idx)}`;
-    if(tb[key]!==undefined){
-      if(tb[key]===a.idx) return -1;
-      if(tb[key]===b.idx) return 1;
-    }
-    return pName(a.idx).localeCompare(pName(b.idx));
-  });
+  return Object.values(stats).map(s=>({...s, gd:s.gf-s.ga})).sort((a,b)=>b.pts!==a.pts?b.pts-a.pts:b.gd!==a.gd?b.gd-a.gd:b.gf!==a.gf?b.gf-a.gf:(pName(a.idx).localeCompare(pName(b.idx))));
 }
 
 // ══════════════════════════════════════
@@ -634,39 +596,22 @@ function buildAllRounds(data){
   // Group Tables — shows after last matchday, before QF
   rounds.push({type:'group-tables', label:'Group Tables'});
 
-  // Quarter-Finals — 4 matches, always shown once tournament is generated
-  const qfDefs = [
-    {idx:0, key:'qf0', label:'QF1 — A1 vs B2'},
-    {idx:1, key:'qf1', label:'QF2 — B1 vs A2'},
-    {idx:2, key:'qf2', label:'QF3 — C1 vs D2'},
-    {idx:3, key:'qf3', label:'QF4 — D1 vs C2'},
+  // Quarter-Finals — always add once tournament is generated
+  const qf0 = (ko.qf&&ko.qf[0])||{home:null,away:null};
+  const qf1 = (ko.qf&&ko.qf[1])||{home:null,away:null};
+  const qfMatches = [
+    {
+      home:qf0.home, away:qf0.away,
+      hScore:((ks.qf0||{}).home??''), aScore:((ks.qf0||{}).away??''),
+      key:'qf0', type:'qf', label:'QF1 — Group A vs C'
+    },
+    {
+      home:qf1.home, away:qf1.away,
+      hScore:((ks.qf1||{}).home??''), aScore:((ks.qf1||{}).away??''),
+      key:'qf1', type:'qf', label:'QF2 — Group B vs D'
+    }
   ];
-  const qfMatches = qfDefs.map(({idx,key,label})=>{
-    const m=(ko.qf&&ko.qf[idx])||{home:null,away:null};
-    const s=ks[key]||{};
-    return {
-      home:m.home, away:m.away,
-      hScore:(s.home??''), aScore:(s.away??''),
-      key, type:'qf', label
-    };
-  });
   rounds.push({type:'qf', label:'Quarter-Finals', matches:qfMatches});
-
-  // Semi-Finals — 2 matches
-  const sfDefs = [
-    {idx:0, key:'sf0', label:'SF1 — QF1 Winner vs QF2 Winner'},
-    {idx:1, key:'sf1', label:'SF2 — QF3 Winner vs QF4 Winner'},
-  ];
-  const sfMatches = sfDefs.map(({idx,key,label})=>{
-    const m=(ko.sf&&ko.sf[idx])||{home:null,away:null};
-    const s=ks[key]||{};
-    return {
-      home:m.home, away:m.away,
-      hScore:(s.home??''), aScore:(s.away??''),
-      key, type:'sf', label
-    };
-  });
-  rounds.push({type:'sf', label:'Semi-Finals', matches:sfMatches});
 
   const fin  = ko.final ||{home:null,away:null};
   const trd  = ko.third ||{home:null,away:null};
@@ -733,7 +678,6 @@ function matchBadgeHtml(m){
     return `<span class="grp-badge ${cls[m.group]||''}">Group ${labels[m.group]||'?'}</span>`;
   }
   if(m.type==='qf')  return `<span class="grp-badge gb-qf">Quarter-Final</span>`;
-  if(m.type==='sf')  return `<span class="grp-badge gb-sf">Semi-Final</span>`;
   if(m.type==='final') return `<span class="grp-badge gb-fin">🏆 Final</span>`;
   if(m.type==='third') return `<span class="grp-badge gb-3rd">🥉 3rd Place</span>`;
   return '';
@@ -956,7 +900,6 @@ function render(){
   else if(round.type==='group'){sb.textContent='Group Stage';sb.className='stage-badge sb-group';}
   else if(round.type==='group-tables'){sb.textContent='Group Tables';sb.className='stage-badge sb-group';}
   else if(round.type==='qf'){sb.textContent='Quarter-Finals';sb.className='stage-badge sb-qf';}
-  else if(round.type==='sf'){sb.textContent='Semi-Finals';sb.className='stage-badge sb-sf';}
   else if(round.type==='results'){sb.textContent='Final Results';sb.className='stage-badge sb-final';}
   else if(round.type==='goals'){sb.textContent='Total Goals';sb.className='stage-badge sb-final';}
   else{sb.textContent='Finals';sb.className='stage-badge sb-final';}
@@ -1061,24 +1004,13 @@ function render(){
     }
     updateCycleInd();
   } else {
-    const isKO = round.type==='qf'||round.type==='sf'||round.type==='final';
-    let cols, rows;
-    if(round.type==='qf'){
-      // 4 QF matches — 2x2 grid
-      cols = n<=1?1:2;
-      rows = Math.ceil(n/cols);
-    } else if(isKO){
-      // SF/Final — 2 matches stacked vertically
-      cols = 1;
-      rows = n;
-    } else {
-      cols = (n<=2?n:n<=4?2:n<=6?3:4);
-      rows = Math.ceil(n/cols);
-    }
+    const isKO = round.type==='qf'||round.type==='final';
+    const cols  = isKO ? 1 : (n<=2?n:n<=4?2:n<=6?3:4);
+    const rows  = Math.ceil(n/cols);
     grid.style.gridTemplateColumns=`repeat(${cols},1fr)`;
     grid.style.gridTemplateRows=`repeat(${rows},1fr)`;
     const crestPx = isKO
-      ? Math.min(Math.round(window.innerHeight*(round.type==='qf'?0.16:0.28)), round.type==='qf'?160:240)
+      ? Math.min(Math.round(window.innerHeight*0.28), 240)
       : Math.min(Math.round(window.innerWidth/(cols*4)),60);
     grid.innerHTML=matches.map((m,i)=>compactCardHtml(m,i,crestPx,isKO)).join('');
     matches.forEach((m,i)=>{
@@ -1134,7 +1066,6 @@ function obsRoundIdxForKey(key, rounds){
     if(key==='draw'         && r.type==='draw')         return i;
     if(key==='group-tables' && r.type==='group-tables') return i;
     if(key==='qf'           && r.type==='qf')           return i;
-    if(key==='sf'           && r.type==='sf')           return i;
     if(key==='final'        && r.type==='final')        return i;
     if(key==='results'      && r.type==='results')      return i;
     if(key==='goals'        && r.type==='goals')        return i;
@@ -1233,10 +1164,9 @@ function load(){
       groups:       s.groups||[[],[],[],[]],
       groupSchedule:s.groupSchedule||[],
       groupScores:  s.groupScores||{},
-      knockout:     s.knockout||{qf:[{home:null,away:null},{home:null,away:null},{home:null,away:null},{home:null,away:null}],sf:[{home:null,away:null},{home:null,away:null}],final:{home:null,away:null},third:{home:null,away:null}},
+      knockout:     s.knockout||{qf:[{home:null,away:null},{home:null,away:null}],final:{home:null,away:null},third:{home:null,away:null}},
       knockoutScores:s.knockoutScores||{},
       playerRoundScores:s.playerRoundScores||{},
-      tiebreakers:  s.tiebreakers||{},
       playerImages: imgs,
     };
 
@@ -1245,7 +1175,6 @@ function load(){
       JSON.stringify(data.groupScores)!==JSON.stringify(lastData&&lastData.groupScores)||
       JSON.stringify(data.knockoutScores)!==JSON.stringify(lastData&&lastData.knockoutScores)||
       JSON.stringify(data.knockout)!==JSON.stringify(lastData&&lastData.knockout)||
-      JSON.stringify(data.tiebreakers)!==JSON.stringify(lastData&&lastData.tiebreakers)||
       JSON.stringify(data.playerRoundScores)!==JSON.stringify(lastData&&lastData.playerRoundScores)||
       lastData===null;
 
@@ -1506,43 +1435,22 @@ function renderResultsScreen(){
   const {knockout, knockoutScores, numPlayers, groups} = lastData;
   const ks = knockoutScores||{};
   const ko = knockout||{};
-  const tb = lastData.tiebreakers||{};
-
-  function obsKOMatch(key){
-    if(key==='qf0') return (ko.qf&&ko.qf[0])||{home:null,away:null};
-    if(key==='qf1') return (ko.qf&&ko.qf[1])||{home:null,away:null};
-    if(key==='qf2') return (ko.qf&&ko.qf[2])||{home:null,away:null};
-    if(key==='qf3') return (ko.qf&&ko.qf[3])||{home:null,away:null};
-    if(key==='sf0') return (ko.sf&&ko.sf[0])||{home:null,away:null};
-    if(key==='sf1') return (ko.sf&&ko.sf[1])||{home:null,away:null};
-    if(key==='final') return ko.final||{home:null,away:null};
-    if(key==='third') return ko.third||{home:null,away:null};
-    return {home:null,away:null};
-  }
 
   function koWinner(key){
     const s=ks[key]||{};
-    const m=obsKOMatch(key);
+    const m=key==='final'?(ko.final||{}):(ko.third||{});
     if(s.home===''||s.home===undefined||s.home===null||s.away===''||s.away===undefined||s.away===null) return null;
     const h=parseInt(s.home),a=parseInt(s.away);
     if(isNaN(h)||isNaN(a)) return null;
-    if(h>a) return m.home;
-    if(a>h) return m.away;
-    // Draw — check tiebreaker
-    if(tb[key]!==undefined) return tb[key];
-    return null;
+    if(h>a) return m.home; if(a>h) return m.away; return null;
   }
   function koLoser(key){
     const s=ks[key]||{};
-    const m=obsKOMatch(key);
+    const m=key==='final'?(ko.final||{}):(ko.third||{});
     if(s.home===''||s.home===undefined||s.home===null||s.away===''||s.away===undefined||s.away===null) return null;
     const h=parseInt(s.home),a=parseInt(s.away);
     if(isNaN(h)||isNaN(a)) return null;
-    if(h>a) return m.away;
-    if(a>h) return m.home;
-    // Draw — check tiebreaker, loser is the other team
-    if(tb[key]!==undefined) return tb[key]===m.home ? m.away : m.home;
-    return null;
+    if(h>a) return m.away; if(a>h) return m.home; return null;
   }
 
   const p1=koWinner('final'), p2=koLoser('final');
@@ -1588,58 +1496,22 @@ function renderResultsScreen(){
     ${podiumCard(4,p4,'4th Place',    'pp-4','4', '#5a8a5e')}
   </div>`;
 
-  // ── Quarter-Final losers (eliminated before the Semi-Finals) ──
-  function sfOutCard(idx){
-    const name = idx!==null ? pName(idx) : '—';
-    const src  = idx!==null ? getImg(idx) : null;
-    const hue  = idx!==null ? (name.split('').reduce((a,c)=>a+c.charCodeAt(0),0)*47)%360 : 0;
-    const ini  = (name||'?').split(/\s+/).map(w=>w[0]||'').join('').toUpperCase().slice(0,3)||'?';
-    const goals = idx!==null ? getPlayerTotalGoals(idx) : 0;
+  // Build knocked-out list — only group-stage eliminated players
+  // QF participants are still in the tournament (they play 3rd place or final)
+  const top4 = new Set([p1,p2,p3,p4].filter(x=>x!==null));
+  const qfParticipants = new Set([
+    ko.qf&&ko.qf[0]&&ko.qf[0].home, ko.qf&&ko.qf[0]&&ko.qf[0].away,
+    ko.qf&&ko.qf[1]&&ko.qf[1].home, ko.qf&&ko.qf[1]&&ko.qf[1].away,
+  ].filter(x=>x!==null&&x!==undefined));
 
-    const crestEl = src
-      ? `<div class="podium-crest-lg"><img src="${src}" alt=""></div>`
-      : `<div class="podium-crest-lg" style="background:hsl(${hue},40%,14%);border:1px solid hsl(${hue},40%,25%)">
-           <span style="font-family:'Bebas Neue',cursive;font-size:clamp(0.7rem,1.4vw,1.2rem);color:hsl(${hue},60%,60%)">${ini}</span>
-         </div>`;
-    const bgStyle = src ? `style="background-image:url('${src}')"` : '';
-
-    return `<div class="sf-out-card">
-      <div class="sf-out-card-bg" ${bgStyle}></div>
-      <div class="sf-out-card-inner">
-        <div class="sf-out-pos-badge">⚔️</div>
-        ${crestEl}
-        <div class="podium-info">
-          <div class="podium-label">Quarter-Final</div>
-          <div class="podium-name-lg" style="color:${idx!==null?'var(--text)':'var(--muted)'}">${esc(name)}</div>
-        </div>
-        ${idx!==null ? `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.1em;flex-shrink:0;margin-left:auto;padding-left:0.5em">
-          <div style="font-family:'Bebas Neue',cursive;font-size:clamp(0.75rem,1.5vw,1.4rem);color:var(--win);white-space:nowrap">${goals} ⚽</div>
-        </div>` : ''}
-      </div>
-    </div>`;
-  }
-
-  // The 4 teams eliminated in the Quarter-Finals, sorted by total goals desc
-  const qfLosers = ['qf0','qf1','qf2','qf3']
-    .map(k=>koLoser(k))
-    .filter(idx=>idx!==null)
-    .map(idx=>({idx, goals:getPlayerTotalGoals(idx)}))
-    .sort((a,b)=>b.goals-a.goals)
-    .map(e=>e.idx);
-
-  const sfOutHtml = `<div class="sf-out-wrap">
-    <div class="sf-out-title">⚔️ Out at the QF</div>
-    ${qfLosers.map(idx=>sfOutCard(idx)).join('')}
-  </div>`;
-
-  // Build knocked-out list — anyone who finished 3rd or lower in their group
-  // (1st and 2nd place in each group advance to the Quarter-Finals)
   const potList=[];
   for(let g=0;g<4;g++){
     const st=calcGroupStandings(g,lastData);
-    st.slice(2).forEach(s=>{
-      const goals=getPlayerTotalGoals(s.idx);
-      potList.push({idx:s.idx,goals});
+    st.slice(1).forEach(s=>{
+      if(!qfParticipants.has(s.idx)){
+        const goals=getPlayerTotalGoals(s.idx);
+        potList.push({idx:s.idx,goals});
+      }
     });
   }
   potList.sort((a,b)=>b.goals-a.goals);
@@ -1678,7 +1550,7 @@ function renderResultsScreen(){
     <div class="ko-lb-table" style="${tableStyle}">${koRows}</div>
   </div>`;
 
-  return `<div class="results-wrap">${podiumHtml}${sfOutHtml}${koHtml}</div>`;
+  return `<div class="results-wrap">${podiumHtml}${koHtml}</div>`;
 }
 
 // ══════════════════════════════════════
@@ -1766,8 +1638,6 @@ async function downloadImagePack(){
       screens.push({key:'group-tables', label:`${n()} - Group Tables`, setup:(()=>{const ri=allRounds.indexOf(r);return()=>{obsRound=ri;render();};})()} );
     } else if(r.type==='qf'){
       screens.push({key:'qf', label:`${n()} - Quarter Finals`, setup:(()=>{const ri=allRounds.indexOf(r);return()=>{obsRound=ri;render();};})()} );
-    } else if(r.type==='sf'){
-      screens.push({key:'sf', label:`${n()} - Semi Finals`, setup:(()=>{const ri=allRounds.indexOf(r);return()=>{obsRound=ri;render();};})()} );
     } else if(r.type==='final'){
       screens.push({key:'final', label:`${n()} - Final and 3rd Place`, setup:(()=>{const ri=allRounds.indexOf(r);return()=>{obsRound=ri;render();};})()} );
     } else if(r.type==='results'){
