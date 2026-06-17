@@ -556,15 +556,14 @@ function pName(idx){
 // ══════════════════════════════════════
 // GROUP STANDINGS CALC
 // ══════════════════════════════════════
-function calcGroupStandings(g, data, upToRound){
+function calcGroupStandings(g, data){
   const {groups, groupSchedule, groupScores, numPlayers} = data;
   const perGroup = numPlayers/4;
   const totalR   = perGroup-1;
-  const maxRound = (upToRound===undefined||upToRound===null) ? totalR-1 : Math.min(upToRound, totalR-1);
   const teamIdxs = groups[g]||[];
   const stats={};
   teamIdxs.forEach(i=>stats[i]={p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0,idx:i});
-  for(let r=0;r<=maxRound;r++){
+  for(let r=0;r<totalR;r++){
     const rm=(groupSchedule||[]).filter(m=>m.round===r&&m.group===g);
     const rKey=String(r);
     const roundScores=groupScores&&(groupScores[rKey]||groupScores[r]);
@@ -613,7 +612,7 @@ function buildAllRounds(data){
   // Round 0 — Group Draw screen (always first)
   rounds.push({type:'draw', label:'Group Draw'});
 
-  // Group stage rounds — each followed by a "tables so far" screen
+  // Group stage rounds
   for(let r=0;r<totalR;r++){
     const ms=(groupSchedule||[]).filter(m=>m.round===r);
     const matches=ms.map(m=>{
@@ -630,12 +629,9 @@ function buildAllRounds(data){
       };
     });
     rounds.push({type:'group', label:`Matchday ${r+1}`, matches});
-    if(r < totalR-1){
-      rounds.push({type:'round-tables', label:`Tables after Round ${r+1}`, upToRound:r});
-    }
   }
 
-  // Group Tables — shows after last matchday, before QF (all rounds = same as last round-tables)
+  // Group Tables — shows after last matchday, before QF
   rounds.push({type:'group-tables', label:'Group Tables'});
 
   // Quarter-Finals — 4 matches, always shown once tournament is generated
@@ -811,6 +807,7 @@ function compactCardHtml(m, mi, crestPx, large){
             <div style="font-size:clamp(0.45rem,0.85vw,0.75rem);text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.45);font-weight:700">🏠 Home</div>
             <div style="flex:1;min-height:0;width:80%;display:flex;align-items:center;justify-content:center">${hCrestInner}</div>
             <div style="font-family:'Bebas Neue',cursive;${nameSz};letter-spacing:0.06em;text-align:center;border-bottom:3px solid #3b82f6;padding-bottom:0.15em;${hWin?'color:var(--win);text-shadow:0 0 20px rgba(34,197,94,0.4)':''}">${esc(hName)}</div>
+            <div style="font-family:'Bebas Neue',cursive;${ptsSz};letter-spacing:0.1em;padding:0.15em 0.6em;border-radius:6px;${hWin?'background:rgba(34,197,94,0.18);color:var(--win)':done?'background:rgba(239,68,68,0.12);color:var(--lose)':'background:rgba(255,255,255,0.05);color:var(--muted)'}">${hPts}</div>
           </div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.4em;border-left:1px solid var(--border);border-right:1px solid var(--border);background:rgba(4,16,5,0.7);padding:0.5rem">
@@ -823,6 +820,7 @@ function compactCardHtml(m, mi, crestPx, large){
             <div style="font-size:clamp(0.45rem,0.85vw,0.75rem);text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.45);font-weight:700">✈️ Away</div>
             <div style="flex:1;min-height:0;width:80%;display:flex;align-items:center;justify-content:center">${aCrestInner}</div>
             <div style="font-family:'Bebas Neue',cursive;${nameSz};letter-spacing:0.06em;text-align:center;border-bottom:3px solid var(--gold);padding-bottom:0.15em;${aWin?'color:var(--win);text-shadow:0 0 20px rgba(34,197,94,0.4)':''}">${esc(aName)}</div>
+            <div style="font-family:'Bebas Neue',cursive;${ptsSz};letter-spacing:0.1em;padding:0.15em 0.6em;border-radius:6px;${aWin?'background:rgba(34,197,94,0.18);color:var(--win)':done?'background:rgba(239,68,68,0.12);color:var(--lose)':'background:rgba(255,255,255,0.05);color:var(--muted)'}">${aPts}</div>
           </div>
         </div>
       </div>
@@ -918,7 +916,7 @@ function singleCardHtml(m, mi){
           <div class="csteam-label">🏠 Home</div>
           ${hCrest}
           <div class="csteam-name cn-home" style="${hWin?'color:var(--win);text-shadow:0 0 28px rgba(34,197,94,0.45)':''}">${esc(hName)}</div>
-          ${done?`<div class="csteam-pts ${hWin?'cp-w':draw?'cp-d':'cp-l'}">${hWin?'+ 3 PTS':draw?'+ 1 PT':'0 PTS'}</div>`:m.type==='group'?`<div class="csteam-pts cp-u">– PTS</div>`:''}
+          ${done?`<div class="csteam-pts ${hWin?'cp-w':draw?'cp-d':'cp-l'}">${hWin?'+ 3 PTS':draw?'+ 1 PT':'0 PTS'}</div>`:`<div class="csteam-pts cp-u">– PTS</div>`}
         </div>
       </div>
       <div class="csscore">${scoreHtml}</div>
@@ -929,7 +927,7 @@ function singleCardHtml(m, mi){
           <div class="csteam-label">✈️ Away</div>
           ${aCrest}
           <div class="csteam-name cn-away" style="${aWin?'color:var(--win);text-shadow:0 0 28px rgba(34,197,94,0.45)':''}">${esc(aName)}</div>
-          ${done?`<div class="csteam-pts ${aWin?'cp-w':draw?'cp-d':'cp-l'}">${aWin?'+ 3 PTS':draw?'+ 1 PT':'0 PTS'}</div>`:m.type==='group'?`<div class="csteam-pts cp-u">– PTS</div>`:''}
+          ${done?`<div class="csteam-pts ${aWin?'cp-w':draw?'cp-d':'cp-l'}">${aWin?'+ 3 PTS':draw?'+ 1 PT':'0 PTS'}</div>`:`<div class="csteam-pts cp-u">– PTS</div>`}
         </div>
       </div>
     </div>
@@ -957,7 +955,6 @@ function render(){
   if(round.type==='draw'){sb.textContent='Group Draw';sb.className='stage-badge sb-group';}
   else if(round.type==='group'){sb.textContent='Group Stage';sb.className='stage-badge sb-group';}
   else if(round.type==='group-tables'){sb.textContent='Group Tables';sb.className='stage-badge sb-group';}
-  else if(round.type==='round-tables'){sb.textContent='Group Tables';sb.className='stage-badge sb-group';}
   else if(round.type==='qf'){sb.textContent='Quarter-Finals';sb.className='stage-badge sb-qf';}
   else if(round.type==='sf'){sb.textContent='Semi-Finals';sb.className='stage-badge sb-sf';}
   else if(round.type==='results'){sb.textContent='Final Results';sb.className='stage-badge sb-final';}
@@ -1010,19 +1007,6 @@ function render(){
       <div id="obs-group-tables" style="flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:clamp(5px,0.9vw,14px)"></div>
     </div>`;
     renderObsGroupTables();
-    renderStrip();
-    return;
-  }
-
-  // ── PER-ROUND TABLES SCREEN (after each matchday) ──
-  if(round.type==='round-tables'){
-    grid.style.gridTemplateColumns='1fr';
-    grid.style.gridTemplateRows='1fr';
-    grid.innerHTML=`<div style="padding:clamp(6px,1vh,14px);height:100%;overflow:hidden;display:flex;flex-direction:column;gap:clamp(4px,0.7vh,10px)">
-      <div style="font-family:'Bebas Neue',cursive;font-size:clamp(1rem,2.2vw,1.9rem);letter-spacing:0.1em;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;flex-shrink:0">📊 Tables — After Round ${(round.upToRound??0)+1}</div>
-      <div id="obs-group-tables" style="flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:clamp(5px,0.9vw,14px)"></div>
-    </div>`;
-    renderObsGroupTables(round.upToRound);
     renderStrip();
     return;
   }
@@ -1158,10 +1142,6 @@ function obsRoundIdxForKey(key, rounds){
       const rNum=parseInt(key.split('-')[1]);
       if(r.type==='group'&&r.matches.length&&r.matches[0].roundIdx===rNum) return i;
     }
-    if(key.startsWith('round-tables-')){
-      const rNum=parseInt(key.split('-')[2]);
-      if(r.type==='round-tables'&&r.upToRound===rNum) return i;
-    }
   }
   return -1;
 }
@@ -1174,7 +1154,6 @@ function navRound(dir){
   if(r){
     let key=r.type;
     if(r.type==='group'&&r.matches&&r.matches.length) key=`group-${r.matches[0].roundIdx}`;
-    if(r.type==='round-tables') key=`round-tables-${r.upToRound}`;
     try{localStorage.setItem('wc_obs_screen',key);}catch(e){}
   }
   render();
@@ -1318,7 +1297,7 @@ function load(){
 // ══════════════════════════════════════
 // OBS GROUP TABLES
 // ══════════════════════════════════════
-function renderObsGroupTables(upToRound){
+function renderObsGroupTables(){
   const cont=document.getElementById('obs-group-tables');
   if(!cont||!lastData) return;
   const {numPlayers}=lastData;
@@ -1327,7 +1306,7 @@ function renderObsGroupTables(upToRound){
   const groupLabels=['A','B','C','D'];
   let html='';
   for(let g=0;g<4;g++){
-    const st=calcGroupStandings(g,lastData,upToRound);
+    const st=calcGroupStandings(g,lastData);
     const [col,bg]=groupColors[g];
     const fs='font-size:clamp(0.5rem,0.9vw,0.82rem)';
     const hfs='font-family:"Bebas Neue",cursive;font-size:clamp(0.55rem,1vw,0.9rem);letter-spacing:0.08em';
@@ -1783,8 +1762,6 @@ async function downloadImagePack(){
     } else if(r.type==='group'){
       const md = r.matches[0]?.roundIdx ?? 0;
       screens.push({key:`group-${md}`, label:`${n()} - Matchday ${md+1}`, setup:(()=>{const ri=allRounds.indexOf(r);return()=>{obsRound=ri;render();};})()} );
-    } else if(r.type==='round-tables'){
-      screens.push({key:`round-tables-${r.upToRound}`, label:`${n()} - Tables after Round ${(r.upToRound??0)+1}`, setup:(()=>{const ri=allRounds.indexOf(r);return()=>{obsRound=ri;render();};})()} );
     } else if(r.type==='group-tables'){
       screens.push({key:'group-tables', label:`${n()} - Group Tables`, setup:(()=>{const ri=allRounds.indexOf(r);return()=>{obsRound=ri;render();};})()} );
     } else if(r.type==='qf'){

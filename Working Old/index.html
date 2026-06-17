@@ -483,9 +483,12 @@ h1,h2,h3,.display{font-family:'Bebas Neue',cursive;letter-spacing:0.06em;}
 <div id="page-standings" class="page">
   <div style="margin-bottom:1rem">
     <h1 style="font-size:2rem;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">Overall Standings</h1>
-    <p style="color:var(--muted);font-size:0.9rem;margin-top:0.3rem">All players ranked by total goals scored across every round.</p>
   </div>
-  <div id="standings-content"></div>
+  <div class="stage-tabs" style="margin-bottom:0">
+    <button class="stage-tab active" data-stab="pts" onclick="switchStandingsTab('pts')">🏆 Points</button>
+    <button class="stage-tab" data-stab="goals" onclick="switchStandingsTab('goals')">⚽ Total Goals</button>
+  </div>
+  <div style="padding-top:1rem" id="standings-content"></div>
 </div>
 
 <!-- ══ KNOCKED OUT POT ══ -->
@@ -1434,16 +1437,9 @@ function renderGroupTables(){
 function renderGroupTablesInline(targetId){
   const cont=document.getElementById(targetId);
   if(!cont)return;
-  renderGroupTablesInlineUpTo(targetId, numPlayers/4-2); // all rounds
-}
-
-// Render group tables using only rounds 0..upToRound
-function renderGroupTablesInlineUpTo(targetId, upToRound){
-  const cont=document.getElementById(targetId);
-  if(!cont)return;
   let html='<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem">';
   for(let g=0;g<4;g++){
-    const st=calcGroupStandingsUpTo(g, upToRound);
+    const st=calcGroupStandings(g);
     html+=`<div style="background:rgba(6,22,7,0.9);border:1px solid ${groupColor(g)}33;border-radius:12px;overflow:hidden">
       <div style="background:${groupColor(g)}18;padding:0.6rem 0.9rem;border-bottom:1px solid ${groupColor(g)}33;font-family:'Bebas Neue',cursive;font-size:1.2rem;color:${groupColor(g)}">Group ${groupLabel(g)}</div>
       <table class="lb-table">
@@ -1460,7 +1456,7 @@ function renderGroupTablesInlineUpTo(targetId, upToRound){
       html+=`<tr${qualifies?' style="background:rgba(246,201,14,0.04)"':''}>
         <td><span class="rank-badge ${rc}">${pos+1}</span></td>
         <td>${crestHtml(s.idx,22,5)}</td>
-        <td class="left"><span style="font-weight:700">${esc(s.name)}</span></td>
+        <td class="left"><span style="font-weight:700">${esc(s.name)}</span>${qualifies?'<span class="trophy-badge tb-gold" style="font-size:0.55rem;padding:0.06rem 0.28rem;margin-left:0.3rem">QF</span>':''}</td>
         <td style="color:var(--muted)">${s.p}</td>
         <td style="color:var(--win)">${s.w}</td>
         <td style="color:var(--draw)">${s.d}</td>
@@ -1474,34 +1470,6 @@ function renderGroupTablesInlineUpTo(targetId, upToRound){
   }
   html+='</div>';
   cont.innerHTML=html;
-}
-
-// Calculate group standings using only rounds 0..upToRound
-function calcGroupStandingsUpTo(g, upToRound){
-  const teamIdxs=groups[g];
-  const stats={};
-  teamIdxs.forEach(i=>stats[i]={idx:i,p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0});
-  const perGroup=numPlayers/4,totalR=perGroup-1;
-  for(let r=0;r<=Math.min(upToRound,totalR-1);r++){
-    const rKey=String(r);
-    const roundScores=groupScores[rKey]||groupScores[r];
-    const rm=groupSchedule.filter(m=>m.round===r&&m.group===g);
-    rm.forEach(match=>{
-      const origIdx=groupSchedule.filter(m=>m.round===r).indexOf(match);
-      const s=(roundScores&&(roundScores[origIdx]||roundScores[String(origIdx)]))||{};
-      const hS=(s.home===''||s.home===undefined||s.home===null)?null:parseInt(s.home);
-      const aS=(s.away===''||s.away===undefined||s.away===null)?null:parseInt(s.away);
-      if(hS===null||aS===null||isNaN(hS)||isNaN(aS))return;
-      stats[match.home].p++;stats[match.away].p++;
-      stats[match.home].gf+=hS;stats[match.home].ga+=aS;
-      stats[match.away].gf+=aS;stats[match.away].ga+=hS;
-      if(hS>aS){stats[match.home].w++;stats[match.home].pts+=3;stats[match.away].l++;}
-      else if(hS<aS){stats[match.away].w++;stats[match.away].pts+=3;stats[match.home].l++;}
-      else{stats[match.home].d++;stats[match.home].pts++;stats[match.away].d++;stats[match.away].pts++;}
-    });
-  }
-  return Object.values(stats).map(s=>({...s,name:pName(s.idx),gd:s.gf-s.ga}))
-    .sort((a,b)=>b.pts!==a.pts?b.pts-a.pts:b.gd!==a.gd?b.gd-a.gd:b.gf!==a.gf?b.gf-a.gf:a.name.localeCompare(b.name));
 }
 
 function renderGroupFixtures(){
@@ -1544,81 +1512,9 @@ function renderGroupFixtures(){
   cont.innerHTML=html;
 }
 
-// ── KO Stage Results Summary ──────────────────────────────────────────────
-function renderKOResultsSummary(stage){
-  // stage = 'qf' or 'sf'
-  const isQF = stage === 'qf';
-  const matchKeys = isQF ? ['qf0','qf1','qf2','qf3'] : ['sf0','sf1'];
-  const stageLabel = isQF ? 'Quarter-Final' : 'Semi-Final';
-  const nextLabel  = isQF ? 'Semi-Finals' : 'Final';
-
-  const through = [], eliminated = [];
-  matchKeys.forEach((key,i)=>{
-    const m = getKOMatch(key)||{home:null,away:null};
-    const w = getKOWinner(key);
-    const l = getKOLoser(key);
-    const s = knockoutScores[key]||{home:'',away:''};
-    const hasScore = s.home!==''&&s.home!==undefined&&s.away!==''&&s.away!==undefined;
-    const matchLabel = isQF ? `QF${i+1}` : `SF${i+1}`;
-
-    if(hasScore && w!==null){
-      through.push({idx:w, matchLabel, opponentIdx:l, result:'win',
-        score:`${m.home===w?s.home:s.away} – ${m.home===w?s.away:s.home}`});
-      if(l!==null) eliminated.push({idx:l, matchLabel, opponentIdx:w, result:'loss',
-        score:`${m.home===l?s.home:s.away} – ${m.home===l?s.away:s.home}`});
-    } else {
-      if(m.home!==null) through.push({idx:m.home, matchLabel, opponentIdx:m.away, result:'pending', score:'TBD'});
-      if(m.away!==null) through.push({idx:m.away, matchLabel, opponentIdx:m.home, result:'pending', score:'TBD'});
-    }
-  });
-
-  function teamRow(entry, isThrough){
-    const src = playerImages[entry.idx]||null;
-    const name = pName(entry.idx);
-    const oppName = entry.opponentIdx!==null ? pName(entry.opponentIdx) : '?';
-    const goals = getPlayerTotalGoals(entry.idx);
-    const hue = (name.split('').reduce((a,c)=>a+c.charCodeAt(0),0)*47)%360;
-    const ini = name.split(/\s+/).map(w=>w[0]||'').join('').toUpperCase().slice(0,2)||'?';
-    const crest = src
-      ? `<img src="${src}" style="width:28px;height:28px;border-radius:4px;object-fit:cover;flex-shrink:0">`
-      : `<div style="width:28px;height:28px;border-radius:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:hsl(${hue},40%,14%);font-family:'Bebas Neue',cursive;font-size:0.6rem;color:hsl(${hue},60%,60%)">${ini}</div>`;
-    const borderCol = isThrough ? 'rgba(74,222,128,0.3)' : 'rgba(248,113,113,0.2)';
-    const bgCol     = isThrough ? 'rgba(74,222,128,0.05)' : 'rgba(248,113,113,0.04)';
-    const statusIcon= entry.result==='win' ? '✅' : entry.result==='loss' ? '❌' : '⏳';
-    const scoreCol  = entry.result==='win' ? 'var(--win)' : entry.result==='loss' ? 'var(--lose)' : 'var(--muted)';
-    return `<div style="display:flex;align-items:center;gap:0.65rem;padding:0.55rem 0.9rem;border:1px solid ${borderCol};border-radius:8px;background:${bgCol};margin-bottom:0.4rem">
-      ${crest}
-      <span style="font-weight:700;font-size:0.9rem;flex:1">${esc(name)}</span>
-      <span style="font-size:0.78rem;color:var(--muted)">vs ${esc(oppName)}</span>
-      <span style="font-family:'Bebas Neue',cursive;font-size:1rem;color:${scoreCol};min-width:3rem;text-align:center">${entry.score}</span>
-      <span style="font-family:'Bebas Neue',cursive;font-size:0.9rem;color:var(--green);min-width:3rem;text-align:right">${goals} ⚽</span>
-      <span style="font-size:1rem">${statusIcon}</span>
-    </div>`;
-  }
-
-  const throughHTML = through.filter(e=>e.result==='win').map(e=>teamRow(e,true)).join('');
-  const pendHTML    = through.filter(e=>e.result==='pending').map(e=>teamRow(e,true)).join('');
-  const elimHTML    = eliminated.map(e=>teamRow(e,false)).join('');
-
-  return `<div style="padding:0.5rem 0">
-    <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap">
-      <div style="font-family:'Bebas Neue',cursive;font-size:1.5rem;color:var(--gold)">${stageLabel} Results</div>
-      <span style="font-size:0.82rem;color:var(--muted)">OBS is showing the ${stageLabel} Results screen</span>
-    </div>
-    ${throughHTML||pendHTML ? `
-    <div style="font-family:'Bebas Neue',cursive;font-size:1rem;color:var(--win);letter-spacing:0.08em;margin-bottom:0.5rem">
-      ✅ Through to the ${nextLabel}
-    </div>
-    ${throughHTML}${pendHTML}` : ''}
-    ${elimHTML ? `
-    <div style="font-family:'Bebas Neue',cursive;font-size:1rem;color:var(--lose);letter-spacing:0.08em;margin:0.75rem 0 0.5rem">
-      ❌ Eliminated
-    </div>
-    ${elimHTML}` : ''}
-  </div>`;
-}
-
-// ── Tiebreaker Logic ──────────────────────────────────────────────────────
+// ══════════════════════════════════════
+// TIEBREAKER LOGIC
+// ══════════════════════════════════════
 
 // Detect group ties affecting 2nd place (and 1st if all tied)
 function detectGroupTies(g){
@@ -1753,14 +1649,6 @@ function clearTiebreaker(key){
 // Storage: playerRoundScores[r][playerIdx] = number of goals
 // Initialised in generateTournament, persisted in saveState/loadState.
 
-function toggleQEActiveFilter(storeKey){
-  const cb = document.getElementById(`qe-filter-${storeKey}`);
-  const show = cb && cb.checked;
-  document.querySelectorAll(`#quick-entry-content tr.qe-inactive-row`).forEach(row=>{
-    row.style.display = show ? 'none' : '';
-  });
-}
-
 function renderQuickEntry(){
   const cont = document.getElementById('quick-entry-content');
   if(!cont) return;
@@ -1781,21 +1669,15 @@ function renderQuickEntry(){
 
   tabsHtml += `<span class="round-sep"></span>`;
 
-  // Group stage rounds — each followed by a Tables tab
+  // Group stage rounds
   for(let r=0;r<totalR;r++){
     const done = isQERoundComplete(r);
     const active = r===currentQERound;
     tabsHtml += `<button class="round-btn${active?' active':''}${done?' complete':''}"
       onclick="selectQERound(${r})">Round ${r+1}${done?' ✓':''}</button>`;
-    // Tables tab after each round (skip after the last round — Group Tables shows the same data)
-    if(r < totalR-1){
-      const tKey = `round-tables-${r}`;
-      tabsHtml += `<button class="round-btn${currentQERound===tKey?' active':''}"
-        onclick="selectQERound('${tKey}')" style="font-size:0.72rem;padding:0.28rem 0.55rem">📊</button>`;
-    }
   }
 
-  // Final Group Tables tab (all rounds)
+  // Group Tables tab
   tabsHtml += `<button class="round-btn${currentQERound==='group-tables'?' active':''}"
     onclick="selectQERound('group-tables')">📊 Tables</button>`;
 
@@ -1880,17 +1762,16 @@ function writeObsScreen(r){
   const totalR   = perGroup - 1;
   const koRounds = getKORoundsForQE();
   let screen;
-  if(r==='draw')              screen = 'draw';
+  if(r==='draw')          screen = 'draw';
   else if(r==='group-tables') screen = 'group-tables';
-  else if(r==='results')      screen = 'results';
-  else if(r==='goals')        screen = 'goals';
-  else if(typeof r==='string'&&r.startsWith('round-tables-')) screen = r;
+  else if(r==='results')  screen = 'results';
+  else if(r==='goals')    screen = 'goals';
   else if(typeof r==='number'&&r<totalR) screen = `group-${r}`;
   else {
     const ki = r - totalR;
     if(ki===0) screen = 'qf';
     else if(ki===1) screen = 'sf';
-    else            screen = 'final';
+    else       screen = 'final';
   }
   try{ localStorage.setItem('wc_obs_screen', screen); }catch(e){}
 }
@@ -1911,19 +1792,9 @@ function renderQERoundContent(r){
     </div>`;
   }
   if(r==='group-tables'){
+    // Render group tables inline then return
     setTimeout(()=>renderGroupTablesInline('qe-group-tables-inline'),0);
     return `<div style="padding:0.75rem 0"><div id="qe-group-tables-inline"></div></div>`;
-  }
-  // Per-round tables: shows standings up to and including that round
-  if(typeof r==='string'&&r.startsWith('round-tables-')){
-    const upToRound = parseInt(r.split('-')[2]);
-    setTimeout(()=>renderGroupTablesInlineUpTo('qe-round-tables-inline', upToRound),0);
-    return `<div style="padding:0.75rem 0">
-      <div style="font-family:'Bebas Neue',cursive;font-size:0.9rem;color:var(--muted);margin-bottom:0.5rem;letter-spacing:0.08em">
-        Standings after Round ${upToRound+1} — OBS showing this table
-      </div>
-      <div id="qe-round-tables-inline"></div>
-    </div>`;
   }
   if(r==='results'){
     return `<div style="padding:1.25rem;text-align:center;color:var(--muted);font-family:'Barlow Condensed',sans-serif;font-size:0.9rem;line-height:1.9">
@@ -1937,6 +1808,7 @@ function renderQERoundContent(r){
       <p>The OBS screen is now showing the <strong style="color:var(--text)">Total Goals Leaderboard</strong>.</p>
     </div>`;
   }
+
   const koRounds = getKORoundsForQE();
   let storeKey, roundLabel, roundDesc;
 
@@ -1964,23 +1836,6 @@ function renderQERoundContent(r){
   }).length;
   const pct = Math.round(filled/sorted.length*100);
 
-  const isKORound = storeKey.startsWith('ko_');
-  let playerMatchMap = {};
-  if(isKORound){
-    const koKey = storeKey.replace('ko_','');
-    const matchKeys = koKey==='qf' ? ['qf0','qf1','qf2','qf3']
-                     : koKey==='sf' ? ['sf0','sf1']
-                     : ['final','third'];
-    matchKeys.forEach((mk,mi)=>{
-      const m = getKOMatch(mk)||{home:null,away:null};
-      const matchLabel = koKey==='qf' ? `QF${mi+1}`
-                        : koKey==='sf' ? `SF${mi+1}`
-                        : mi===0 ? 'Final' : '3rd Place';
-      if(m.home!==null && m.home!==undefined) playerMatchMap[m.home]={matchLabel,opponentIdx:m.away};
-      if(m.away!==null && m.away!==undefined) playerMatchMap[m.away]={matchLabel,opponentIdx:m.home};
-    });
-  }
-
   let html = `
     <div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.75rem;flex-wrap:wrap">
       <div>
@@ -1994,20 +1849,7 @@ function renderQERoundContent(r){
     </div>
     <div class="prog-bar" style="margin-bottom:0.85rem">
       <div class="prog-fill" style="width:${pct}%"></div>
-    </div>`;
-
-  if(isKORound){
-    const activeCount = sorted.filter(p=>playerMatchMap[p.idx]).length;
-    html += `<div style="margin-bottom:0.6rem;display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap">
-      <span style="font-size:0.78rem;color:var(--win)">⚡ ${activeCount} team${activeCount===1?'':'s'} still in this round — highlighted below</span>
-      <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.78rem;color:var(--muted);cursor:pointer;margin-left:auto">
-        <input type="checkbox" id="qe-filter-${storeKey}" onchange="toggleQEActiveFilter('${storeKey}')" style="cursor:pointer">
-        Show only active teams
-      </label>
-    </div>`;
-  }
-
-  html += `
+    </div>
     <div style="background:rgba(5,18,6,0.95);border:1px solid rgba(255,255,255,0.1);border-radius:12px;overflow:hidden">
     <table class="qe-table">
       <thead><tr>
@@ -2015,7 +1857,6 @@ function renderQERoundContent(r){
         <th style="width:28px"></th>
         <th>Team</th>
         <th style="width:50px">Grp</th>
-        ${isKORound?'<th>Fixture</th>':''}
         <th style="width:80px;text-align:center">Goals</th>
       </tr></thead>
       <tbody>`;
@@ -2024,24 +1865,11 @@ function renderQERoundContent(r){
     const g   = Math.floor(p.idx / perGroup);
     const val = playerRoundScores[storeKey][String(p.idx)];
     const hasVal = val!==undefined && val!=='' && val!==null;
-    const matchInfo = isKORound ? playerMatchMap[p.idx] : null;
-    const isActive = isKORound ? !!matchInfo : true;
-    const rowStyle = isKORound
-      ? (isActive
-          ? 'background:rgba(74,222,128,0.07);border-left:3px solid var(--win)'
-          : 'background:rgba(255,255,255,0.015);opacity:0.55')
-      : '';
-    const fixtureCell = isKORound
-      ? (matchInfo
-          ? `<td style="font-size:0.78rem"><span style="font-family:'Bebas Neue',cursive;color:var(--gold);margin-right:0.4rem">${matchInfo.matchLabel}</span>vs ${esc(pName(matchInfo.opponentIdx))}</td>`
-          : `<td style="font-size:0.78rem;color:var(--muted);font-style:italic">Not in this round</td>`)
-      : '';
-    html += `<tr id="qe-prow-${storeKey}-${p.idx}" class="${hasVal?'qe-done':''} ${isKORound?(isActive?'qe-active-row':'qe-inactive-row'):''}" style="${rowStyle}">
+    html += `<tr id="qe-prow-${storeKey}-${p.idx}" class="${hasVal?'qe-done':''}">
       <td>${crestHtml(p.idx, 22, 4)}</td>
       <td style="font-family:'Bebas Neue',cursive;font-size:0.85rem;color:${groupColor(g)}">${order+1}</td>
       <td style="font-weight:600;font-size:0.9rem">${esc(p.name)}</td>
       <td><span class="group-label ${groupLabelClass(g)}">${groupLabel(g)}</span></td>
-      ${fixtureCell}
       <td style="text-align:center">
         <input class="qe-input" type="text" inputmode="numeric" pattern="[0-9]*"
           maxlength="2" placeholder="–"
@@ -2538,6 +2366,14 @@ function renderPodium(){
 // ══════════════════════════════════════
 // OVERALL STANDINGS
 // ══════════════════════════════════════
+function switchStandingsTab(tab){
+  activeStandingsTab = tab;
+  document.querySelectorAll('[data-stab]').forEach(t=>{
+    if(t.closest('#page-standings')) t.classList.toggle('active', t.dataset.stab===tab);
+  });
+  renderStandings();
+}
+
 function renderStandings(){
   const cont=document.getElementById('standings-content');
   if(!cont)return;
@@ -2549,8 +2385,15 @@ function renderStandings(){
     st.forEach((s,pos)=>allStats.push({...s,group:g,groupPos:pos,totalGoals:getPlayerTotalGoals(s.idx)}));
   }
 
-  // Ranked purely by total goals scored across every round
-  allStats.sort((a,b)=>b.totalGoals!==a.totalGoals?b.totalGoals-a.totalGoals:a.name.localeCompare(b.name));
+  if(activeStandingsTab==='goals'){
+    // Sort by total goals desc, then pts as tiebreak
+    allStats.sort((a,b)=>b.totalGoals!==a.totalGoals?b.totalGoals-a.totalGoals:b.pts!==a.pts?b.pts-a.pts:a.name.localeCompare(b.name));
+  } else {
+    // Sort by pts desc, then GD, GF
+    allStats.sort((a,b)=>b.pts!==a.pts?b.pts-a.pts:b.gd!==a.gd?b.gd-a.gd:b.gf!==a.gf?b.gf-a.gf:a.name.localeCompare(b.name));
+  }
+
+  const byGoals = activeStandingsTab==='goals';
 
   let html=`<div style="background:rgba(6,22,7,0.9);border:1px solid rgba(255,255,255,0.1);border-radius:12px;overflow:hidden">
     <table class="lb-table">
@@ -2559,17 +2402,35 @@ function renderStandings(){
         <th style="width:28px"></th>
         <th class="left">Team</th>
         <th>Grp</th>
-        <th title="Total Goals (all rounds)" style="color:var(--gold)">⚽ Total Goals</th>
+        <th title="Played">P</th><th title="Won">W</th><th title="Drawn">D</th><th title="Lost">L</th>
+        <th title="Goals For">GF</th><th title="Goals Against">GA</th><th title="Goal Difference">GD</th>
+        <th title="Total Goals (all rounds)" style="color:${byGoals?'var(--gold)':'inherit'}">⚽ Tot</th>
+        <th style="color:${!byGoals?'var(--gold)':'inherit'}">Pts</th>
       </tr></thead><tbody>`;
 
   allStats.forEach((s,pos)=>{
     const rc=pos===0?'rank-1':pos===1?'rank-2':pos===2?'rank-3':'rank-n';
+    const gdStr=s.gd>0?`<span class="gd-pos">+${s.gd}</span>`:s.gd<0?`<span class="gd-neg">${s.gd}</span>`:s.gd;
+    // Highlight the sort column
+    const goalsCellStyle=byGoals
+      ?'font-family:\'Bebas Neue\',cursive;font-size:1.25rem;color:var(--gold);background:rgba(246,201,14,0.06)'
+      :'font-family:\'Bebas Neue\',cursive;font-size:1.1rem;color:var(--green)';
+    const ptsCellStyle=!byGoals
+      ?'font-family:\'Bebas Neue\',cursive;font-size:1.25rem;color:var(--gold);background:rgba(246,201,14,0.06)'
+      :'font-family:\'Bebas Neue\',cursive;font-size:1.1rem;color:var(--muted)';
     html+=`<tr>
       <td><span class="rank-badge ${rc}">${pos+1}</span></td>
       <td>${crestHtml(s.idx,24,5)}</td>
       <td class="left"><span style="font-weight:700">${esc(s.name)}</span></td>
       <td><span class="group-label ${groupLabelClass(s.group)}">${groupLabel(s.group)}</span></td>
-      <td style="font-family:'Bebas Neue',cursive;font-size:1.25rem;color:var(--gold);background:rgba(246,201,14,0.06)">${s.totalGoals||'–'}</td>
+      <td style="color:var(--muted)">${s.p}</td>
+      <td style="color:var(--win)">${s.w}</td>
+      <td style="color:var(--draw)">${s.d}</td>
+      <td style="color:var(--lose)">${s.l}</td>
+      <td>${s.gf}</td><td>${s.ga}</td>
+      <td>${gdStr}</td>
+      <td style="${goalsCellStyle}">${s.totalGoals||'–'}</td>
+      <td style="${ptsCellStyle}">${s.pts}</td>
     </tr>`;
   });
 

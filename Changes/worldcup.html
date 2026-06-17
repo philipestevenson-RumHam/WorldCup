@@ -1787,12 +1787,10 @@ function renderQuickEntry(){
     const active = r===currentQERound;
     tabsHtml += `<button class="round-btn${active?' active':''}${done?' complete':''}"
       onclick="selectQERound(${r})">Round ${r+1}${done?' ✓':''}</button>`;
-    // Tables tab after each round (skip after the last round — Group Tables shows the same data)
-    if(r < totalR-1){
-      const tKey = `round-tables-${r}`;
-      tabsHtml += `<button class="round-btn${currentQERound===tKey?' active':''}"
-        onclick="selectQERound('${tKey}')" style="font-size:0.72rem;padding:0.28rem 0.55rem">📊</button>`;
-    }
+    // Tables tab after each round
+    const tKey = `round-tables-${r}`;
+    tabsHtml += `<button class="round-btn${currentQERound===tKey?' active':''}"
+      onclick="selectQERound('${tKey}')" style="font-size:0.72rem;padding:0.28rem 0.55rem">📊</button>`;
   }
 
   // Final Group Tables tab (all rounds)

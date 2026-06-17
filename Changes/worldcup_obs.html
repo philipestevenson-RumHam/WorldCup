@@ -630,9 +630,7 @@ function buildAllRounds(data){
       };
     });
     rounds.push({type:'group', label:`Matchday ${r+1}`, matches});
-    if(r < totalR-1){
-      rounds.push({type:'round-tables', label:`Tables after Round ${r+1}`, upToRound:r});
-    }
+    rounds.push({type:'round-tables', label:`Tables after Round ${r+1}`, upToRound:r});
   }
 
   // Group Tables — shows after last matchday, before QF (all rounds = same as last round-tables)
