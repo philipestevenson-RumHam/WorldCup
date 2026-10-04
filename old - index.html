@@ -507,7 +507,7 @@ h1,h2,h3,.display{font-family:'Bebas Neue',cursive;letter-spacing:0.06em;}
 // ══════════════════════════════════════
 // STATE
 // ══════════════════════════════════════
-const VALID_COUNTS = [16,24,32];
+const VALID_COUNTS = [16,20,24,28,32];
 let numPlayers = 16;
 let players = [];
 let playerImages = {};
@@ -574,7 +574,7 @@ function loadState(){
     const raw=localStorage.getItem('wc_state');
     if(raw){
       const s=JSON.parse(raw);
-      numPlayers=VALID_COUNTS.includes(s.numPlayers)?s.numPlayers:16;
+      numPlayers=s.numPlayers||16;
       players=s.players||[];
       groupSchedule=s.groupSchedule||[];
       groupScores=s.groupScores||{};
