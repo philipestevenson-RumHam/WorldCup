@@ -382,6 +382,7 @@ h1,h2,h3,.display{font-family:'Bebas Neue',cursive;letter-spacing:0.06em;}
     <button class="nav-tab" onclick="showPage('tournament')">Tournament</button>
     <button class="nav-tab" onclick="showPage('standings')">Standings</button>
     <button class="nav-tab" onclick="showPage('pot')">⚰️ Knocked Out</button>
+    <button class="nav-tab" onclick="showPage('wheel')">🎡 Winner Draw</button>
   </div>
   <div id="nav-stage-badge" style="margin-left:auto;padding:0.5rem 0;display:none">
     <span class="trophy-badge tb-gold" id="stage-indicator">Group Stage</span>
@@ -499,6 +500,15 @@ h1,h2,h3,.display{font-family:'Bebas Neue',cursive;letter-spacing:0.06em;}
     <button class="stage-tab" data-stab="qf" onclick="switchPotTab('qf')">⚔️ Quarter-Finals</button>
   </div>
   <div style="padding-top:1rem" id="pot-content"></div>
+</div>
+
+<!-- ══ WINNER DRAW ══ -->
+<div id="page-wheel" class="page">
+  <div style="margin-bottom:1rem;text-align:center">
+    <h1 style="font-size:2rem;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">🎡 Winner Draw</h1>
+    <p style="color:var(--muted);font-size:0.9rem;margin-top:0.3rem">The OBS screen shows the wheel. Choose who's on it, then spin.</p>
+  </div>
+  <div id="wheel-page-content"></div>
 </div>
 
 </div><!-- /wrap -->
@@ -647,7 +657,7 @@ function showPage(id){
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
   const tabs=document.querySelectorAll('.nav-tab');
-  ['setup','tournament','standings','pot'].forEach((pg,i)=>{if(pg===id&&tabs[i])tabs[i].classList.add('active');});
+  ['setup','tournament','standings','pot','wheel'].forEach((pg,i)=>{if(pg===id&&tabs[i])tabs[i].classList.add('active');});
   if(id==='tournament'&&tournamentGenerated){
     document.querySelectorAll('[data-stab]').forEach(t=>t.classList.toggle('active',t.dataset.stab===activeGroupTab));
     document.querySelectorAll('.stage-pane').forEach(p=>p.classList.toggle('active',p.id==='gp-'+activeGroupTab));
@@ -655,6 +665,7 @@ function showPage(id){
   }
   if(id==='standings'&&tournamentGenerated)renderStandings();
   if(id==='pot'&&tournamentGenerated)renderPot();
+  if(id==='wheel'){ if(tournamentGenerated) writeObsScreen('wheel'); renderWheelPage(); }
 }
 function switchGroupTab(id){
   activeGroupTab=id;
@@ -1934,6 +1945,7 @@ function writeObsScreen(r){
   else if(r==='group-tables') screen = 'group-tables';
   else if(r==='results')      screen = 'results';
   else if(r==='goals')        screen = 'goals';
+  else if(r==='wheel')        screen = 'wheel';
   else if(typeof r==='string'&&r.startsWith('round-tables-')) screen = r;
   else if(typeof r==='number'&&r<totalR) screen = `group-${r}`;
   else {
@@ -1943,6 +1955,141 @@ function writeObsScreen(r){
     else            screen = 'final';
   }
   try{ localStorage.setItem('wc_obs_screen', screen); }catch(e){}
+}
+
+// ══════════════════════════════════════
+// WINNER WHEEL (control — wheel itself is on the OBS page)
+// ══════════════════════════════════════
+const WHEEL_SPIN_MS = 8000;
+const WHEEL_POOLS = [
+  {key:'all',      label:'All Teams',                                      sub:'Every team in the tournament'},
+  {key:'p4qfko',   label:'4th + QF Losers + Knocked Out',                  sub:'4th place, the four QF losers and every group-stage knocked-out team'},
+  {key:'p4qfko_x', label:'4th + QF Losers + Knocked Out — no top scorer',  sub:'As above, minus the highest scorer in the Knocked Out pot'},
+  {key:'ko',       label:'Knocked Out only',                               sub:'Teams that finished 3rd or lower in their group'},
+  {key:'ko_x',     label:'Knocked Out only — no top scorer',               sub:'Knocked Out teams, minus the highest scorer'},
+];
+let wheelPool = (()=>{ try{ return localStorage.getItem('wc_wheel_pool')||'all'; }catch(e){ return 'all'; } })();
+let wheelResult = null;        // {idx,label} once the OBS spin has finished
+let wheelSpinningUntil = 0;
+
+function getWheelPool(key){
+  propagateKnockout();
+  let entries=[], excluded=[], warn=[];
+  if(key==='all'){
+    entries = Array.from({length:numPlayers},(_,i)=>i);
+  } else {
+    const koIdx=[];
+    for(let g=0;g<4;g++) calcGroupStandings(g).slice(2).forEach(st=>koIdx.push(st.idx));
+    entries = koIdx.slice();
+    if(!koIdx.length || [0,1,2,3].some(g=>getGroupWinner(g)===null))
+      warn.push('Group stage isn\u2019t finished \u2014 the Knocked Out list is provisional.');
+    if(key==='p4qfko' || key==='p4qfko_x'){
+      const qfL=['qf0','qf1','qf2','qf3'].map(k=>getKOLoser(k));
+      const fourth=getKOLoser('third');
+      if(qfL.some(v=>v===null)) warn.push('Not all Quarter-Final losers are known yet.');
+      if(fourth===null) warn.push('4th place isn\u2019t decided yet.');
+      qfL.concat([fourth]).forEach(v=>{ if(v!==null) entries.push(v); });
+    }
+    if(key.endsWith('_x')){
+      const scored=koIdx.map(i=>({idx:i,goals:getPlayerTotalGoals(i)}));
+      const top=Math.max(0,...scored.map(x=>x.goals));
+      if(top>0){
+        excluded=scored.filter(x=>x.goals===top);
+        const ex=new Set(excluded.map(x=>x.idx));
+        entries=entries.filter(i=>!ex.has(i));
+      } else warn.push('No goals recorded yet \u2014 nobody is excluded.');
+    }
+  }
+  entries=Array.from(new Set(entries));
+  return {entries,excluded,warn};
+}
+
+function wheelPoolDef(){ return WHEEL_POOLS.find(p=>p.key===wheelPool)||WHEEL_POOLS[0]; }
+
+function publishWheelCfg(){
+  const p=wheelPoolDef();
+  const {entries}=getWheelPool(p.key);
+  try{ localStorage.setItem('wc_wheel_cfg', JSON.stringify({pool:p.key,label:p.label,entries})); }catch(e){}
+}
+
+function setWheelPool(key){
+  if(Date.now()<wheelSpinningUntil) return;
+  wheelPool=key; wheelResult=null;
+  try{ localStorage.setItem('wc_wheel_pool',key); }catch(e){}
+  renderWheelPage();
+}
+
+function spinWheel(){
+  if(Date.now()<wheelSpinningUntil) return;
+  const p=wheelPoolDef();
+  const {entries}=getWheelPool(p.key);
+  if(!entries.length) return;
+  const buf=new Uint32Array(1); crypto.getRandomValues(buf);
+  const winner=entries[buf[0]%entries.length];
+  const cfg={pool:p.key,label:p.label,entries};
+  writeObsScreen('wheel');
+  try{
+    localStorage.setItem('wc_wheel_cfg', JSON.stringify(cfg));
+    localStorage.setItem('wc_wheel_spin', JSON.stringify({id:Date.now(),pool:p.key,label:p.label,entries,winner,ms:WHEEL_SPIN_MS}));
+  }catch(e){}
+  wheelResult=null;
+  wheelSpinningUntil=Date.now()+WHEEL_SPIN_MS+1200;
+  renderWheelPage();
+  setTimeout(()=>{
+    wheelResult={idx:winner,label:p.label};
+    renderWheelPage();
+  }, WHEEL_SPIN_MS+1200);
+}
+
+function renderWheelPage(){
+  const cont=document.getElementById('wheel-page-content');
+  if(!cont) return;
+  if(!tournamentGenerated){
+    cont.innerHTML='<div style="color:var(--muted);padding:2rem;text-align:center">Generate a tournament first.</div>';
+    return;
+  }
+  publishWheelCfg();
+  const spinning=Date.now()<wheelSpinningUntil;
+  const info=getWheelPool(wheelPoolDef().key);
+
+  const optHtml=WHEEL_POOLS.map(p=>{
+    const n=getWheelPool(p.key).entries.length;
+    return `<option value="${p.key}" ${p.key===wheelPool?'selected':''} style="background:#0d2a0f">${p.label} (${n})</option>`;
+  }).join('');
+
+  const names=info.entries.slice().sort((a,b)=>pName(a).localeCompare(pName(b)));
+  const chips=names.map(i=>`<span style="font-size:0.74rem;padding:0.15rem 0.55rem;border-radius:99px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1)">${esc(pName(i))}</span>`).join('');
+  const exHtml=info.excluded.length
+    ? `<div style="font-size:0.78rem;color:var(--lose);margin-bottom:0.5rem">Excluded (top scorer): ${info.excluded.map(x=>`${esc(pName(x.idx))} · ${x.goals} goals`).join(', ')}</div>` : '';
+  const warnHtml=info.warn.map(w=>`<div style="font-size:0.78rem;color:var(--draw);margin-bottom:0.35rem">⚠️ ${w}</div>`).join('');
+
+  let resultHtml='';
+  if(spinning){
+    resultHtml=`<div style="text-align:center;padding:0.9rem;color:var(--gold);font-family:'Bebas Neue',cursive;font-size:1.3rem;letter-spacing:0.1em">🎡 Spinning on OBS…</div>`;
+  } else if(wheelResult){
+    resultHtml=`<div style="display:flex;align-items:center;justify-content:center;gap:0.9rem;padding:0.9rem;border-radius:12px;background:rgba(246,201,14,0.07);border:1px solid rgba(246,201,14,0.35)">
+      <span style="font-size:1.6rem">🏆</span>
+      ${crestHtml(wheelResult.idx,44,5)}
+      <div>
+        <div style="font-family:'Bebas Neue',cursive;font-size:0.85rem;letter-spacing:0.15em;color:var(--gold)">Winner</div>
+        <div style="font-family:'Bebas Neue',cursive;font-size:1.7rem;line-height:1">${esc(pName(wheelResult.idx))}</div>
+      </div>
+    </div>`;
+  }
+
+  const off=spinning||!info.entries.length;
+  cont.innerHTML=`<div class="panel" style="max-width:640px;margin:0 auto">
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--muted);margin-bottom:0.4rem">Who's on the wheel</div>
+    <select ${spinning?'disabled':''} onchange="setWheelPool(this.value)"
+      style="width:100%;padding:0.7rem 0.9rem;border-radius:10px;font-size:1rem;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.04em;
+      background:rgba(6,22,7,0.95);color:var(--text);border:1px solid var(--gold);margin-bottom:1rem;${spinning?'opacity:0.5;':''}">${optHtml}</select>
+    <div style="font-family:'Bebas Neue',cursive;font-size:0.95rem;letter-spacing:0.1em;color:var(--muted);margin-bottom:0.5rem">In the draw · ${info.entries.length} team${info.entries.length===1?'':'s'}</div>
+    ${exHtml}${warnHtml}
+    <div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-bottom:1.1rem">${chips||'<span style="color:var(--muted);font-size:0.82rem">No teams in this draw yet.</span>'}</div>
+    <button class="btn btn-gold" ${off?'disabled':''} onclick="spinWheel()"
+      style="width:100%;padding:0.85rem;font-size:1.15rem;justify-content:center;${off?'opacity:0.45;cursor:not-allowed;':''}">🎡 Spin the Wheel</button>
+    <div style="margin-top:0.9rem">${resultHtml}</div>
+  </div>`;
 }
 
 function renderQERoundContent(r){
@@ -1987,6 +2134,7 @@ function renderQERoundContent(r){
       <p>The OBS screen is now showing the <strong style="color:var(--text)">Total Goals Leaderboard</strong>.</p>
     </div>`;
   }
+  if(r==='wheel'){ currentQERound=0; return renderQERoundContent(0); } // legacy saved state
   const koRounds = getKORoundsForQE();
   let storeKey, roundLabel, roundDesc;
 

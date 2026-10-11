@@ -411,6 +411,22 @@ input[type=range].speed-slider::-moz-range-thumb{width:13px;height:13px;border-r
 .ko-lb-goals{font-family:'Bebas Neue',cursive;font-size:clamp(0.8rem,1.5vw,1.4rem);color:var(--win);flex-shrink:0;}
 .ko-lb-elim{font-size:clamp(0.4rem,0.7vw,0.62rem);color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;font-weight:700;flex-shrink:0;white-space:nowrap;}
 
+/* ── Winner wheel ── */
+.wheel-card{display:flex;flex-direction:column;align-items:center;gap:clamp(4px,1vh,12px);text-align:center;
+  background:rgba(6,22,7,0.92);border:1px solid rgba(255,255,255,0.1);border-radius:clamp(8px,1.2vw,16px);
+  padding:clamp(10px,2.4vh,32px) clamp(12px,2vw,36px);width:100%;max-width:560px;}
+.wheel-card.win{border:2px solid var(--gold);box-shadow:0 0 40px rgba(246,201,14,0.25);
+  animation:wheelPop .55s cubic-bezier(.2,1.4,.4,1) both;}
+.wheel-card-title{font-family:'Bebas Neue',cursive;font-size:clamp(1.2rem,3vw,2.6rem);letter-spacing:0.1em;
+  background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.wheel-card-sub{font-size:clamp(0.6rem,1.2vw,1.05rem);letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);font-weight:700;}
+.wheel-win-lbl{font-family:'Bebas Neue',cursive;font-size:clamp(0.9rem,2vw,1.7rem);letter-spacing:0.2em;color:var(--gold);}
+.wheel-win-name{font-family:'Bebas Neue',cursive;font-size:clamp(1.6rem,4.6vw,4.2rem);letter-spacing:0.06em;line-height:1.05;
+  word-break:break-word;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.wheel-pulse{animation:wheelPulse 1s ease-in-out infinite;}
+@keyframes wheelPop{0%{transform:scale(.6);opacity:0}100%{transform:scale(1);opacity:1}}
+@keyframes wheelPulse{50%{opacity:.45}}
+
 /* status bar */
 .status-bar{position:fixed;bottom:5px;right:9px;font-size:clamp(0.45rem,0.68vw,0.6rem);
   color:var(--muted);display:flex;align-items:center;gap:5px;z-index:10;}
@@ -694,20 +710,23 @@ function buildAllRounds(data){
   // Total Goals leaderboard — always last
   rounds.push({type:'goals', label:'⚽ Total Goals'});
 
+  // Winner wheel — always last
+  rounds.push({type:'wheel', label:'🎡 Winner Draw'});
+
   return rounds;
 }
 
 // ══════════════════════════════════════
 // CONFETTI
 // ══════════════════════════════════════
-function launchConfetti(canvasId){
+function launchConfetti(canvasId,count=70){
   const canvas=document.getElementById(canvasId);
   if(!canvas) return;
   const ctx=canvas.getContext('2d');
   const W=canvas.offsetWidth||400,H=canvas.offsetHeight||400;
   canvas.width=W;canvas.height=H;
   const cols=['#f6c90e','#3b9eff','#22c55e','#f472b6','#ffffff','#a3e635'];
-  const pieces=Array.from({length:70},()=>({
+  const pieces=Array.from({length:count},()=>({
     x:Math.random()*W,y:Math.random()*H-H,
     vx:(Math.random()-0.5)*2.5,vy:Math.random()*3.5+1.2,
     c:cols[Math.floor(Math.random()*cols.length)],
@@ -946,6 +965,8 @@ function render(){
 
   const round=allRounds[obsRound];
   if(!round){return;}
+  if(round.type==='wheel' && wheel.phase==='spinning') return; // never rebuild mid-spin
+  if(round.type!=='wheel') wheelCancel();
 
   // Update header
   document.getElementById('round-lbl').textContent=round.label;
@@ -962,6 +983,7 @@ function render(){
   else if(round.type==='sf'){sb.textContent='Semi-Finals';sb.className='stage-badge sb-sf';}
   else if(round.type==='results'){sb.textContent='Final Results';sb.className='stage-badge sb-final';}
   else if(round.type==='goals'){sb.textContent='Total Goals';sb.className='stage-badge sb-final';}
+  else if(round.type==='wheel'){sb.textContent='Winner Draw';sb.className='stage-badge sb-final';}
   else{sb.textContent='Finals';sb.className='stage-badge sb-final';}
 
   stopAllConfetti();
@@ -1037,6 +1059,24 @@ function render(){
       const cc=document.getElementById('results-champ-confetti');
       if(cc) launchConfetti('results-champ-confetti');
     },200);
+    renderStrip();
+    return;
+  }
+
+  // ── WINNER WHEEL SCREEN ──
+  if(round.type==='wheel'){
+    grid.style.gridTemplateColumns='1fr';
+    grid.style.gridTemplateRows='1fr';
+    grid.innerHTML=`<div id="wheel-screen" style="position:relative;height:100%;width:100%;display:flex;flex-direction:column;gap:clamp(4px,0.7vh,10px);padding:clamp(6px,1vh,14px);overflow:hidden">
+      <div style="font-family:'Bebas Neue',cursive;font-size:clamp(1rem,2.2vw,1.9rem);letter-spacing:0.1em;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;flex-shrink:0">🎡 Winner Draw</div>
+      <div id="wheel-sub" style="font-family:'Bebas Neue',cursive;font-size:clamp(0.6rem,1.1vw,0.9rem);color:var(--muted);letter-spacing:0.12em;flex-shrink:0"></div>
+      <div style="flex:1;min-height:0;display:flex;align-items:stretch;gap:clamp(8px,2vw,32px)">
+        <div id="wheel-wrap" style="flex:1.25;min-width:0;position:relative"><canvas id="wheel-canvas" style="position:absolute;top:0;left:0;width:100%;height:100%"></canvas></div>
+        <div id="wheel-side" style="flex:1;min-width:0;align-self:center;display:flex;justify-content:center"></div>
+      </div>
+      <canvas class="confetti-canvas" id="wheel-confetti" style="z-index:6"></canvas>
+    </div>`;
+    wheelMount();
     renderStrip();
     return;
   }
@@ -1154,6 +1194,7 @@ function obsRoundIdxForKey(key, rounds){
     if(key==='final'        && r.type==='final')        return i;
     if(key==='results'      && r.type==='results')      return i;
     if(key==='goals'        && r.type==='goals')        return i;
+    if(key==='wheel'        && r.type==='wheel')        return i;
     if(key.startsWith('group-')){
       const rNum=parseInt(key.split('-')[1]);
       if(r.type==='group'&&r.matches.length&&r.matches[0].roundIdx===rNum) return i;
@@ -1214,6 +1255,201 @@ function updateCycleInd(){
 // ══════════════════════════════════════
 // WAITING / SHOW
 // ══════════════════════════════════════
+// ══════════════════════════════════════
+// WINNER WHEEL
+// ══════════════════════════════════════
+const wheel = {entries:[], hasCfg:false, label:'All Teams', winner:null, phase:'idle', rot:0, endRot:0, raf:null, kick:0, lastSeg:-1};
+let lastWheelSpinId = (()=>{ try{ const w=JSON.parse(localStorage.getItem('wc_wheel_spin')||'null'); return w?w.id:null; }catch(e){ return null; } })();
+let lastWheelCfgRaw = null;
+const WHEEL_COLS = ['#1d6b3a','#1c4f9c','#7a3fa8','#b8860b','#0f5132','#2563a8','#8b3a8f','#a16207'];
+const TAU = Math.PI*2;
+const wNorm = a => ((a%TAU)+TAU)%TAU;
+
+function wheelActive(){ const r=allRounds[obsRound]; return !!(r&&r.type==='wheel'); }
+
+function wheelEntries(){
+  if(wheel.hasCfg) return wheel.entries;
+  const n=(lastData&&lastData.numPlayers)||0;
+  return Array.from({length:n},(_,i)=>i);
+}
+function wheelLabel(){ return wheel.hasCfg ? wheel.label : 'All Teams'; }
+
+function wheelApplyCfg(c){
+  if(!c||!Array.isArray(c.entries)) return false;
+  if(wheel.phase==='spinning') return false;
+  if(wheel.hasCfg && JSON.stringify(c.entries)===JSON.stringify(wheel.entries) && c.label===wheel.label) return false;
+  wheel.entries=c.entries.slice(); wheel.label=c.label||''; wheel.hasCfg=true;
+  wheel.phase='idle'; wheel.winner=null;
+  return true;
+}
+function wheelPrepare(w){
+  wheelCancel();
+  wheel.entries=(w.entries||[]).slice(); wheel.label=w.label||''; wheel.hasCfg=true;
+  wheel.phase='idle'; wheel.winner=null;
+}
+function wheelCancel(){
+  if(wheel.raf){ cancelAnimationFrame(wheel.raf); wheel.raf=null; }
+  if(wheel.phase==='spinning'){ wheel.rot=wNorm(wheel.endRot); wheel.phase='done'; }
+}
+function wheelColor(i,n){
+  let k=i%WHEEL_COLS.length;
+  if(n%WHEEL_COLS.length===1 && i===n-1) k=(k+3)%WHEEL_COLS.length;
+  return WHEEL_COLS[k];
+}
+
+function wheelSize(){
+  const wrap=document.getElementById('wheel-wrap'), cv=document.getElementById('wheel-canvas');
+  if(!wrap||!cv) return;
+  const w=Math.max(100,wrap.clientWidth), h=Math.max(100,wrap.clientHeight);
+  const dpr=window.devicePixelRatio||1;
+  cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr);
+  const m=Math.min(w,h);
+  cv._w=w; cv._h=h; cv._dpr=dpr; cv._R=m*0.43; cv._cy=h/2+m*0.025;
+  wheelDraw();
+}
+function wheelMount(){
+  wheelSize();
+  wheelRenderSide();
+  if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ if(!wheel.raf) wheelDraw(); });
+  if(wheel.phase==='done') setTimeout(()=>launchConfetti('wheel-confetti',170),200);
+}
+
+function wheelDraw(){
+  const cv=document.getElementById('wheel-canvas'); if(!cv||!cv._w) return;
+  const ctx=cv.getContext('2d'), dpr=cv._dpr, W=cv._w, H=cv._h, R=cv._R, cx=W/2, cy=cv._cy;
+  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H);
+  const ents=wheelEntries(), n=ents.length;
+
+  // gold rim + dark backing
+  const rim=ctx.createLinearGradient(cx-R,cy-R,cx+R,cy+R);
+  rim.addColorStop(0,'#f6c90e'); rim.addColorStop(1,'#d4880a');
+  ctx.save(); ctx.shadowColor='rgba(246,201,14,0.35)'; ctx.shadowBlur=R*0.08;
+  ctx.beginPath(); ctx.arc(cx,cy,R*1.045,0,TAU); ctx.fillStyle=rim; ctx.fill(); ctx.restore();
+  ctx.beginPath(); ctx.arc(cx,cy,R,0,TAU); ctx.fillStyle='#06160a'; ctx.fill();
+
+  if(!n){
+    ctx.fillStyle='#5a8a5e'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font=`${Math.round(R*0.1)}px 'Bebas Neue',sans-serif`;
+    ctx.fillText('No teams in this draw yet',cx,cy);
+    return;
+  }
+
+  const seg=TAU/n;
+  const winSeg = wheel.phase==='done' ? ents.indexOf(wheel.winner) : -1;
+  for(let i=0;i<n;i++){
+    const a0=-Math.PI/2+wheel.rot+i*seg, a1=a0+seg;
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,R*0.985,a0,a1); ctx.closePath();
+    ctx.fillStyle=wheelColor(i,n); ctx.fill();
+    ctx.lineWidth=Math.max(1,R*0.004); ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.stroke();
+
+    const name=pName(ents[i]);
+    const arc=TAU*R*0.7/n;
+    const fs=Math.max(7,Math.min(R*0.085,arc*0.62));
+    ctx.save(); ctx.translate(cx,cy); ctx.rotate(a0+seg/2);
+    ctx.font=`700 ${fs}px 'Barlow Condensed',sans-serif`;
+    ctx.textAlign='right'; ctx.textBaseline='middle'; ctx.fillStyle='#fff';
+    ctx.shadowColor='rgba(0,0,0,0.6)'; ctx.shadowBlur=2;
+    const maxW=R*0.72;
+    let txt=name;
+    while(txt.length>1 && ctx.measureText(txt).width>maxW) txt=txt.slice(0,-1);
+    if(txt!==name) txt=txt.trimEnd()+'…';
+    ctx.fillText(txt,R*0.94,0);
+    ctx.restore();
+
+    if(winSeg>=0 && i!==winSeg){
+      ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,R*0.985,a0,a1); ctx.closePath();
+      ctx.fillStyle='rgba(4,16,5,0.62)'; ctx.fill();
+    }
+  }
+  if(winSeg>=0){
+    const a0=-Math.PI/2+wheel.rot+winSeg*seg, a1=a0+seg;
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,R*0.985,a0,a1); ctx.closePath();
+    ctx.lineWidth=R*0.014; ctx.strokeStyle='#f6c90e'; ctx.stroke();
+  }
+
+  // rim bulbs
+  for(let b=0;b<24;b++){
+    const a=b/24*TAU;
+    ctx.beginPath(); ctx.arc(cx+Math.cos(a)*R*1.022,cy+Math.sin(a)*R*1.022,R*0.011,0,TAU);
+    ctx.fillStyle=b%2?'#fff7cf':'#7a4a05'; ctx.fill();
+  }
+
+  // hub
+  ctx.beginPath(); ctx.arc(cx,cy,R*0.15,0,TAU); ctx.fillStyle='#0a2a0c'; ctx.fill();
+  ctx.lineWidth=R*0.012; ctx.strokeStyle='#f6c90e'; ctx.stroke();
+  ctx.font=`${Math.round(R*0.14)}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle='#fff';
+  ctx.fillText('🏆',cx,cy+R*0.01);
+
+  // pointer (flicks as it passes each segment)
+  ctx.save();
+  ctx.translate(cx,cy-R*1.04);
+  ctx.rotate(-wheel.kick*0.5);
+  ctx.shadowColor='rgba(0,0,0,0.6)'; ctx.shadowBlur=R*0.03;
+  ctx.beginPath(); ctx.moveTo(-R*0.07,-R*0.02); ctx.lineTo(R*0.07,-R*0.02); ctx.lineTo(0,R*0.17); ctx.closePath();
+  const pg=ctx.createLinearGradient(0,-R*0.02,0,R*0.17); pg.addColorStop(0,'#f6c90e'); pg.addColorStop(1,'#d4880a');
+  ctx.fillStyle=pg; ctx.fill();
+  ctx.lineWidth=Math.max(1,R*0.008); ctx.strokeStyle='#06160a'; ctx.stroke();
+  ctx.restore();
+}
+
+function wheelRenderSide(){
+  const el=document.getElementById('wheel-side'); if(!el) return;
+  const n=wheelEntries().length;
+  const sub=document.getElementById('wheel-sub');
+  if(sub) sub.textContent=`${wheelLabel()} · ${n} team${n===1?'':'s'}`;
+  const label=esc(wheelLabel());
+  if(wheel.phase==='done' && wheel.winner!==null){
+    const size=Math.min(Math.round(window.innerHeight*0.2),180);
+    el.innerHTML=`<div class="wheel-card win">
+      <div class="wheel-win-lbl">🎉 Winner 🎉</div>
+      ${crestHtml(wheel.winner,size)}
+      <div class="wheel-win-name">${esc(pName(wheel.winner))}</div>
+      <div class="wheel-card-sub">${label}</div>
+    </div>`;
+  } else if(wheel.phase==='spinning'){
+    el.innerHTML=`<div class="wheel-card">
+      <div style="font-size:clamp(2rem,5vw,4.5rem);line-height:1">🎡</div>
+      <div class="wheel-card-title wheel-pulse">Spinning…</div>
+      <div class="wheel-card-sub">${label}</div>
+    </div>`;
+  } else {
+    el.innerHTML=`<div class="wheel-card">
+      <div style="font-size:clamp(2rem,5vw,4.5rem);line-height:1">🎡</div>
+      <div class="wheel-card-title">Ready to Spin</div>
+      <div class="wheel-card-sub">${label}</div>
+      <div class="wheel-card-sub" style="color:var(--text)">${n} team${n===1?'':'s'} in the draw</div>
+    </div>`;
+  }
+}
+
+function wheelSpin(w){
+  const ents=wheelEntries(), n=ents.length;
+  if(!n) return;
+  let wi=ents.indexOf(w.winner); if(wi<0) wi=0;
+  const seg=TAU/n, jit=(Math.random()-0.5)*0.7;
+  const delta=wNorm(wNorm(-(wi+0.5+jit)*seg)-wNorm(wheel.rot));
+  const start=wheel.rot, total=TAU*(6+Math.floor(Math.random()*3))+delta;
+  const ms=w.ms||8000;
+  wheel.winner=ents[wi]; wheel.endRot=start+total; wheel.phase='spinning'; wheel.kick=0;
+  wheel.lastSeg=Math.floor(wNorm(-start)/seg);
+  if(!document.getElementById('wheel-canvas')){ wheel.rot=wNorm(wheel.endRot); wheel.phase='done'; return; }
+  wheelRenderSide();
+  const t0=performance.now();
+  function frame(now){
+    const t=Math.min(1,(now-t0)/ms);
+    wheel.rot=start+total*(1-Math.pow(1-t,3.6));
+    const sIdx=Math.floor(wNorm(-wheel.rot)/seg);
+    if(sIdx!==wheel.lastSeg){ wheel.lastSeg=sIdx; wheel.kick=1; }
+    wheel.kick*=0.84;
+    wheelDraw();
+    if(t<1){ wheel.raf=requestAnimationFrame(frame); return; }
+    wheel.raf=null; wheel.rot=wNorm(wheel.endRot); wheel.phase='done'; wheel.kick=0;
+    wheelDraw(); wheelRenderSide();
+    setTimeout(()=>launchConfetti('wheel-confetti',170),250);
+  }
+  wheel.raf=requestAnimationFrame(frame);
+}
+
 function showWaiting(show){
   const wm=document.getElementById('waiting-msg');
   if(wm) wm.style.display=show?'flex':'none';
@@ -1298,9 +1534,29 @@ function load(){
       setTimeout(()=>{ drawPlayed=true; runDrawAnimation(); }, 400);
     }
 
+    // Winner wheel: pool config + spin command from the manager
+    let wheelSpinCmd=null;
+    const wcRaw=localStorage.getItem('wc_wheel_cfg')||'';
+    if(wcRaw!==lastWheelCfgRaw){
+      lastWheelCfgRaw=wcRaw;
+      try{ if(wheelApplyCfg(JSON.parse(wcRaw)) && wheelActive()) screenChanged=true; }catch(e){}
+    }
+    try{
+      const ws=JSON.parse(localStorage.getItem('wc_wheel_spin')||'null');
+      if(ws && ws.id!==lastWheelSpinId){
+        lastWheelSpinId=ws.id;
+        wheelSpinCmd=ws;
+        wheelPrepare(ws);
+        const wi=obsRoundIdxForKey('wheel',newRounds);
+        if(wi>=0) obsRound=wi;
+        screenChanged=true;
+      }
+    }catch(e){}
+
     showWaiting(false);
     // Always re-render if screen changed OR data changed
     if(changed || screenChanged) render();
+    if(wheelSpinCmd){ const cmd=wheelSpinCmd; setTimeout(()=>wheelSpin(cmd),450); }
 
     document.getElementById('status-txt').textContent='Live · '+new Date().toLocaleTimeString();
     document.getElementById('status-bar-txt').textContent=
@@ -1865,6 +2121,9 @@ async function downloadImagePack(){
 
 load();
 setInterval(load,2000);
+// react instantly to the manager (storage events fire across tabs of the same origin)
+window.addEventListener('storage',e=>{ if(!e.key||e.key.indexOf('wc_')===0) load(); });
+window.addEventListener('resize',()=>{ if(wheelActive()) wheelSize(); });
 
 </script>
 </body>
