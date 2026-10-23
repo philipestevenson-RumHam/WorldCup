@@ -515,6 +515,38 @@ h1,h2,h3,.display{font-family:'Bebas Neue',cursive;letter-spacing:0.06em;}
 
 <script>
 // ══════════════════════════════════════
+// SPECIAL TEAMS — edit this block
+// ──────────────────────────────────────
+// Any team whose name CONTAINS `match` (case-insensitive, even inside a longer name) gets:
+//   • displayName : shown instead of the real name on the EXPORTED IMAGE PACK only
+//   • logo        : forced as the team image everywhere (overrides any uploaded photo)
+//   • neverWin    : stays on the Winner Draw wheel but can never be picked as the winner
+// Put the logo files in the same folder as index.html / worldcup_obs.html.
+// ══════════════════════════════════════
+const SPECIAL_TEAMS = [
+  { match:'667',    displayName:'667 the ManChild of the Beast',    logo:'logo-667.png',    neverWin:true },
+  { match:'madcap', displayName:'MadCraps', logo:'logo-madcap.png', neverWin:true },
+];
+function specialTeamByName(name){
+  const n=String(name||'').toLowerCase();
+  if(!n) return null;
+  return SPECIAL_TEAMS.find(t=>n.includes(String(t.match).toLowerCase()))||null;
+}
+function specialTeam(idx){ return specialTeamByName(players[idx]); }
+// Force logos into playerImages for matching teams (the OBS page reads these via wc_imgs)
+function applyTeamOverrides(){
+  if(!Array.isArray(players)) return;
+  players.forEach((name,i)=>{
+    const t=specialTeamByName(name);
+    if(t&&t.logo) playerImages[i]=t.logo;
+  });
+}
+// Tell the OBS page which names to swap on the exported images
+function publishSpecialTeams(){
+  try{ localStorage.setItem('wc_special',JSON.stringify(SPECIAL_TEAMS.map(t=>({match:t.match,displayName:t.displayName})))); }catch(e){}
+}
+
+// ══════════════════════════════════════
 // STATE
 // ══════════════════════════════════════
 const VALID_COUNTS = [16,24,32];
@@ -573,6 +605,7 @@ let activeStandingsTab = 'pts';
 // PERSIST
 // ══════════════════════════════════════
 function saveState(){
+  applyTeamOverrides();publishSpecialTeams();
   const s={numPlayers,players,groupSchedule,groupScores,groups,knockout,knockoutScores,
            tiebreakers,
            tournamentGenerated,currentGroupRound,playerRoundScores,currentQERound};
@@ -606,6 +639,7 @@ function loadState(){
     const imgs=localStorage.getItem('wc_imgs');
     if(imgs)playerImages=JSON.parse(imgs);
   }catch(e){}
+  applyTeamOverrides();
 }
 
 // ══════════════════════════════════════
@@ -704,6 +738,7 @@ function setPlayerCount(n){
 
 let _uploadIdx=-1;
 function buildPlayerInputs(){
+  applyTeamOverrides();
   const g=document.getElementById('player-inputs');
   g.innerHTML='';
   let shared=document.getElementById('wc-shared-crest');
@@ -726,8 +761,10 @@ function buildPlayerInputs(){
         canvas.getContext('2d').drawImage(img,0,0,w,h);
         const data=canvas.toDataURL('image/jpeg',0.9);
         playerImages[idx]=data;
+        applyTeamOverrides(); // special teams keep their logo even after an upload
+        const shown=playerImages[idx];
         const cz=document.getElementById(`wcz-${idx}`);
-        if(cz)cz.innerHTML=`<img src="${data}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:3px">`;
+        if(cz)cz.innerHTML=`<img src="${shown}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:3px">`;
         try{localStorage.setItem('wc_imgs',JSON.stringify(playerImages));}catch(e){}
         updateImgCountLabel();
         if(tournamentGenerated){renderGroupStage();renderKnockout();renderStandings();renderPot();}
@@ -763,7 +800,14 @@ function buildPlayerInputs(){
     inp.type='text';inp.placeholder=`Team ${i+1}`;inp.id=`wp${i}`;
     inp.value=name;inp.maxLength=25;
     inp.addEventListener('input',(function(idx){return function(){
+      const wasSpecial=!!specialTeam(idx);
       players[idx]=this.value.trim();
+      if(wasSpecial!==!!specialTeam(idx)||specialTeam(idx)){
+        applyTeamOverrides();
+        const czEl=document.getElementById(`wcz-${idx}`);
+        if(czEl&&playerImages[idx]&&specialTeam(idx)) czEl.innerHTML=`<img src="${playerImages[idx]}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:3px">`;
+        updateImgCountLabel();
+      }
       // Clear error highlight on this row
       const row=this.closest('.player-input-row');
       if(row&&row.style.borderColor) row.style.borderColor='';
@@ -804,7 +848,7 @@ function updateImgCountLabel(){
   if(el)el.textContent=n?`${n} photo${n>1?'s':''} loaded`:'No photos loaded';
   if(btn)btn.style.display=n?'':'none';
 }
-function clearImages(){playerImages={};saveState();updateImgCountLabel();buildPlayerInputs();if(tournamentGenerated){renderGroupStage();renderKnockout();renderStandings();renderPot();}}
+function clearImages(){playerImages={};applyTeamOverrides();saveState();updateImgCountLabel();buildPlayerInputs();if(tournamentGenerated){renderGroupStage();renderKnockout();renderStandings();renderPot();}}
 function fillDefaults(){
   const names=['England','France','Germany','Brazil','Argentina','Spain','Portugal','Netherlands','Italy','Belgium','Croatia','Uruguay','Mexico','Colombia','Denmark','Senegal','Japan','Morocco','Australia','USA','South Korea','Switzerland','Ghana','Ecuador','Serbia','Poland','Cameroon','Wales','Costa Rica','Iran','Tunisia','Canada'];
   for(let i=0;i<numPlayers;i++)players[i]=names[i]||`Team ${i+1}`;
@@ -2024,8 +2068,11 @@ function spinWheel(){
   const p=wheelPoolDef();
   const {entries}=getWheelPool(p.key);
   if(!entries.length) return;
+  // Protected teams stay on the wheel but can never be the winner
+  const eligible=entries.filter(i=>{ const t=specialTeam(i); return !(t&&t.neverWin); });
+  if(!eligible.length) return;
   const buf=new Uint32Array(1); crypto.getRandomValues(buf);
-  const winner=entries[buf[0]%entries.length];
+  const winner=eligible[buf[0]%eligible.length];
   const cfg={pool:p.key,label:p.label,entries};
   writeObsScreen('wheel');
   try{
@@ -2077,7 +2124,8 @@ function renderWheelPage(){
     </div>`;
   }
 
-  const off=spinning||!info.entries.length;
+  const hasEligible=info.entries.some(i=>{ const t=specialTeam(i); return !(t&&t.neverWin); });
+  const off=spinning||!info.entries.length||!hasEligible;
   cont.innerHTML=`<div class="panel" style="max-width:640px;margin:0 auto">
     <div style="font-family:'Barlow Condensed',sans-serif;font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--muted);margin-bottom:0.4rem">Who's on the wheel</div>
     <select ${spinning?'disabled':''} onchange="setWheelPool(this.value)"
