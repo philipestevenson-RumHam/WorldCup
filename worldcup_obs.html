@@ -1481,6 +1481,9 @@ function showWaiting(show){
 // LOAD from localStorage
 // ══════════════════════════════════════
 function load(){
+  // While an image pack is being captured the page must not follow the manager
+  // (screen changes, wheel spins, draw triggers) or the captures show the wrong screen.
+  if(exportingPack) return;
   try{
     const raw=localStorage.getItem('wc_state');
     const rawImgs=localStorage.getItem('wc_imgs');
@@ -2088,6 +2091,15 @@ function applyExportAliases(){
 // IMAGE PACK EXPORT
 // ══════════════════════════════════════
 async function downloadImagePack(){
+  try{ await _downloadImagePackInner(); }
+  finally{
+    // If anything threw mid-export, make sure live OBS sync and the UI come back
+    if(exportingPack){ exportingPack=false; load(); }
+    const ov=document.getElementById('export-overlay'); if(ov) ov.style.display='none';
+    const b=document.getElementById('dl-btn'); if(b){ b.disabled=false; b.style.opacity='1'; }
+  }
+}
+async function _downloadImagePackInner(){
   if(!lastData){ alert('No tournament data loaded yet.'); return; }
 
   const btn = document.getElementById('dl-btn');
@@ -2137,6 +2149,7 @@ async function downloadImagePack(){
   overlay.style.display='flex';
   btn.disabled=true; btn.style.opacity='0.4';
   stopCycle();
+  wheelCancel();   // settle any spinning wheel so it can't block or hijack screen rendering
 
   const zip = new JSZip();
   const captureEl = document.querySelector('.wrap');
