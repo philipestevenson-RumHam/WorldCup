@@ -455,6 +455,12 @@ input[type=range].speed-slider::-moz-range-thumb{width:13px;height:13px;border-r
         min="1" max="10" step="1" value="5" oninput="onSpeedChange(this.value)">
       <span class="speed-val" id="speed-val">3s</span>
     </div>
+    <div class="speed-wrap" title="Table text size">
+      <span class="speed-lbl">Text</span>
+      <input type="range" class="speed-slider" id="text-slider"
+        min="0.8" max="3" step="0.1" value="1.5" oninput="onTextScaleChange(this.value)">
+      <span class="speed-val" id="text-val">1.5×</span>
+    </div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:0.6rem">
       <div class="live-badge"><span class="live-dot"></span><span id="status-txt">Connecting…</span></div>
       <button id="dl-btn" onclick="downloadImagePack()" style="
@@ -518,6 +524,15 @@ let lastDrawTrigger = localStorage.getItem('wc_obs_draw_trigger'); // seed so ex
 
 const SPEED_MAP = [10000,7000,5000,4000,3000,2000,1500,1000,750,500];
 
+let tableScale = (()=>{ try{ const v=parseFloat(localStorage.getItem('wc_obs_table_scale')); return (v>=0.8&&v<=3)?v:1.5; }catch(e){ return 1.5; } })();
+function onTextScaleChange(v){
+  tableScale=parseFloat(v)||1.5;
+  document.getElementById('text-val').textContent=tableScale.toFixed(1)+'×';
+  try{localStorage.setItem('wc_obs_table_scale',tableScale);}catch(e){}
+  const r=allRounds&&allRounds[obsRound];
+  if(r&&(r.type==='group-tables'||r.type==='round-tables')) render();
+}
+function isTableRound(r){ return !!r&&(r.type==='group-tables'||r.type==='round-tables'); }
 function onSpeedChange(v){
   const idx=parseInt(v)-1;
   cycleDelay=SPEED_MAP[idx];
@@ -1031,7 +1046,8 @@ function render(){
       <div style="font-family:'Bebas Neue',cursive;font-size:clamp(1rem,2.2vw,1.9rem);letter-spacing:0.1em;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;flex-shrink:0">📊 Group Tables</div>
       <div id="obs-group-tables" style="flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:clamp(5px,0.9vw,14px)"></div>
     </div>`;
-    renderObsGroupTables();
+    renderObsGroupTables(undefined, cycleActive?cycleMatchIdx%4:null);
+    updateCycleInd();
     renderStrip();
     return;
   }
@@ -1044,7 +1060,8 @@ function render(){
       <div style="font-family:'Bebas Neue',cursive;font-size:clamp(1rem,2.2vw,1.9rem);letter-spacing:0.1em;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;flex-shrink:0">📊 Tables — After Round ${(round.upToRound??0)+1}</div>
       <div id="obs-group-tables" style="flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:clamp(5px,0.9vw,14px)"></div>
     </div>`;
-    renderObsGroupTables(round.upToRound);
+    renderObsGroupTables(round.upToRound, cycleActive?cycleMatchIdx%4:null);
+    updateCycleInd();
     renderStrip();
     return;
   }
@@ -1225,7 +1242,8 @@ function advanceCycle(){
   if(!lastData||!allRounds.length) return;
   const round=allRounds[obsRound];
   if(!round) return;
-  const matches=round.matches.filter(m=>m.home!==null||m.away!==null);
+  if(isTableRound(round)){ cycleMatchIdx=(cycleMatchIdx+1)%4; render(); return; }
+  const matches=(round.matches||[]).filter(m=>m.home!==null||m.away!==null);
   const n=matches.length||1;
   cycleMatchIdx=(cycleMatchIdx+1)%n;
   render();
@@ -1248,7 +1266,11 @@ function toggleCycle(){if(cycleActive)stopCycle();else startCycle();}
 function updateCycleInd(){
   if(!lastData||!allRounds.length) return;
   const round=allRounds[obsRound];
-  const n=(round&&round.matches.filter(m=>m.home!==null||m.away!==null).length)||0;
+  if(isTableRound(round)){
+    document.getElementById('cycle-ind').textContent=`Group ${'ABCD'[cycleMatchIdx%4]} ${(cycleMatchIdx%4)+1}/4`;
+    return;
+  }
+  const n=(round&&round.matches?round.matches.filter(m=>m.home!==null||m.away!==null).length:0)||0;
   document.getElementById('cycle-ind').textContent=`Match ${cycleMatchIdx+1}/${n}`;
 }
 
@@ -1575,7 +1597,7 @@ function load(){
 // ══════════════════════════════════════
 // OBS GROUP TABLES
 // ══════════════════════════════════════
-function renderObsGroupTables(upToRound){
+function renderObsGroupTables(upToRound, onlyGroup){
   const cont=document.getElementById('obs-group-tables');
   if(!cont||!lastData) return;
   const {numPlayers}=lastData;
@@ -1583,14 +1605,19 @@ function renderObsGroupTables(upToRound){
                      ['var(--gc)','rgba(74,222,128,0.15)'],['var(--gd)','rgba(251,191,36,0.15)']];
   const groupLabels=['A','B','C','D'];
   let html='';
+  const single=(onlyGroup!==null&&onlyGroup!==undefined);
+  const sc=tableScale*(single?1.6:1);
+  cont.style.setProperty('--ts',sc);
+  cont.style.gridTemplateColumns=single?'1fr':'1fr 1fr';
   for(let g=0;g<4;g++){
+    if(single&&g!==onlyGroup) continue;
     const st=calcGroupStandings(g,lastData,upToRound);
     const [col,bg]=groupColors[g];
-    const fs='font-size:clamp(0.5rem,0.9vw,0.82rem)';
-    const hfs='font-family:"Bebas Neue",cursive;font-size:clamp(0.55rem,1vw,0.9rem);letter-spacing:0.08em';
+    const fs='font-size:calc(clamp(0.5rem,0.9vw,0.82rem)*var(--ts,1))';
+    const hfs='font-family:"Bebas Neue",cursive;font-size:calc(clamp(0.55rem,1vw,0.9rem)*var(--ts,1));letter-spacing:0.08em';
     html+=`<div style="background:rgba(6,22,7,0.92);border:1px solid ${col}33;border-radius:10px;overflow:hidden;display:flex;flex-direction:column;min-height:0">
       <div style="background:${bg};padding:clamp(3px,0.5vh,7px) clamp(7px,1.1vw,14px);border-bottom:1px solid ${col}33;${hfs};color:${col};flex-shrink:0">Group ${groupLabels[g]}</div>
-      <table style="width:100%;border-collapse:collapse;flex:1">
+      <table style="width:100%;border-collapse:collapse;${single?'':'flex:1'}">
         <thead><tr style="background:rgba(0,0,0,0.25)">
           <th style="width:20px;padding:clamp(2px,0.35vh,5px) clamp(4px,0.6vw,8px);text-align:center;${hfs};color:var(--muted)">#</th>
           <th style="width:20px"></th>
@@ -1613,14 +1640,14 @@ function renderObsGroupTables(upToRound){
       const hue=(name.split('').reduce((a,c)=>a+c.charCodeAt(0),0)*47)%360;
       const ini=name.split(/\s+/).map(w=>w[0]||'').join('').toUpperCase().slice(0,2)||'?';
       const crestEl=src
-        ?`<div style="width:clamp(14px,1.8vw,22px);height:clamp(14px,1.8vw,22px);border-radius:3px;overflow:hidden;flex-shrink:0"><img src="${src}" style="width:100%;height:100%;object-fit:cover"></div>`
-        :`<div style="width:clamp(14px,1.8vw,22px);height:clamp(14px,1.8vw,22px);border-radius:3px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:hsl(${hue},40%,14%);font-family:'Bebas Neue',cursive;font-size:0.5rem;color:hsl(${hue},60%,60%)">${ini}</div>`;
+        ?`<div style="width:calc(clamp(14px,1.8vw,22px)*var(--ts,1));height:calc(clamp(14px,1.8vw,22px)*var(--ts,1));border-radius:3px;overflow:hidden;flex-shrink:0"><img src="${src}" style="width:100%;height:100%;object-fit:cover"></div>`
+        :`<div style="width:calc(clamp(14px,1.8vw,22px)*var(--ts,1));height:calc(clamp(14px,1.8vw,22px)*var(--ts,1));border-radius:3px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:hsl(${hue},40%,14%);font-family:'Bebas Neue',cursive;font-size:calc(0.5rem*var(--ts,1));color:hsl(${hue},60%,60%)">${ini}</div>`;
       const rankCol=isWinner?'var(--gold)':qualifies?'#94a3b8':'var(--muted)';
       const rowBg=qualifies?'background:rgba(246,201,14,0.05)':'';
       html+=`<tr style="${rowBg};border-bottom:1px solid rgba(255,255,255,0.05)">
         <td style="text-align:center;${hfs};color:${rankCol};padding:clamp(2px,0.4vh,6px) clamp(4px,0.6vw,8px)">${pos+1}</td>
         <td style="padding:clamp(2px,0.3vh,4px) clamp(2px,0.3vw,5px)">${crestEl}</td>
-        <td style="text-align:left;${fs};font-weight:700;padding:clamp(2px,0.4vh,6px) clamp(4px,0.6vw,8px);color:${qualifies?'var(--gold)':'var(--text)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:clamp(60px,9vw,140px)">${esc(name)}${qualifies?` <span style="font-size:clamp(0.38rem,0.65vw,0.55rem);background:rgba(246,201,14,0.15);color:var(--gold);padding:0.05em 0.3em;border-radius:2px">QF</span>`:''}</td>
+        <td style="text-align:left;${fs};font-weight:700;padding:clamp(2px,0.4vh,6px) clamp(4px,0.6vw,8px);color:${qualifies?'var(--gold)':'var(--text)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:calc(clamp(60px,9vw,140px)*var(--ts,1))">${esc(name)}${qualifies?` <span style="font-size:calc(clamp(0.38rem,0.65vw,0.55rem)*var(--ts,1));background:rgba(246,201,14,0.15);color:var(--gold);padding:0.05em 0.3em;border-radius:2px">QF</span>`:''}</td>
         <td style="text-align:center;${fs};color:var(--muted);padding:clamp(2px,0.4vh,6px) clamp(4px,0.6vw,8px)">${s.p}</td>
         <td style="text-align:center;${fs};color:var(--win);padding:clamp(2px,0.4vh,6px) clamp(4px,0.6vw,8px)">${s.w}</td>
         <td style="text-align:center;${fs};color:var(--draw);padding:clamp(2px,0.4vh,6px) clamp(4px,0.6vw,8px)">${s.d}</td>
@@ -1628,7 +1655,7 @@ function renderObsGroupTables(upToRound){
         <td style="text-align:center;${fs};padding:clamp(2px,0.4vh,6px) clamp(4px,0.6vw,8px)">${s.gf}</td>
         <td style="text-align:center;${fs};padding:clamp(2px,0.4vh,6px) clamp(4px,0.6vw,8px)">${s.ga}</td>
         <td style="text-align:center;${fs};color:${s.gd>0?'var(--win)':s.gd<0?'var(--lose)':'var(--muted)'};padding:clamp(2px,0.4vh,6px) clamp(4px,0.6vw,8px)">${gd}</td>
-        <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:clamp(0.75rem,1.4vw,1.3rem);color:var(--gold);padding:clamp(2px,0.4vh,6px) clamp(4px,0.6vw,8px)">${s.pts}</td>
+        <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:calc(clamp(0.75rem,1.4vw,1.3rem)*var(--ts,1));color:var(--gold);padding:clamp(2px,0.4vh,6px) clamp(4px,0.6vw,8px)">${s.pts}</td>
       </tr>`;
     });
     html+='</tbody></table></div>';
@@ -2186,6 +2213,10 @@ setInterval(load,2000);
 window.addEventListener('storage',e=>{ if(!e.key||e.key.indexOf('wc_')===0) load(); });
 window.addEventListener('resize',()=>{ if(wheelActive()) wheelSize(); });
 
+</script>
+<script>
+(function(){const sl=document.getElementById('text-slider'),tv=document.getElementById('text-val');
+if(sl){sl.value=tableScale;tv.textContent=tableScale.toFixed(1)+'×';}})();
 </script>
 </body>
 </html>
