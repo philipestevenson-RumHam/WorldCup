@@ -150,6 +150,27 @@ h1,h2,h3,.display{font-family:'Bebas Neue',cursive;letter-spacing:0.06em;}
 }
 .crest-zone:hover{border-color:var(--gold);}
 .crest-zone img{width:100%;height:100%;object-fit:cover;border-radius:3px;}
+/* ── Flag picker ── */
+#flag-picker{position:fixed;inset:0;z-index:2000;display:none;align-items:center;justify-content:center;
+  background:rgba(0,0,0,0.7);padding:1rem;}
+#flag-picker .fp-box{background:var(--card);border:1px solid var(--border2);border-radius:12px;
+  width:min(760px,100%);max-height:88vh;display:flex;flex-direction:column;overflow:hidden;
+  box-shadow:0 10px 40px rgba(0,0,0,0.6);}
+#flag-picker .fp-hdr{display:flex;align-items:center;gap:0.6rem;padding:0.7rem 0.9rem;
+  border-bottom:1px solid var(--border);flex-wrap:wrap;}
+#flag-picker .fp-title{font-family:'Bebas Neue',cursive;font-size:1.2rem;letter-spacing:0.08em;color:var(--gold);}
+#flag-picker .fp-search{flex:1;min-width:140px;background:rgba(255,255,255,0.06);border:1px solid var(--border);
+  border-radius:6px;color:var(--text);padding:0.4rem 0.6rem;font-size:0.85rem;font-family:inherit;}
+#flag-picker .fp-grid{overflow-y:auto;padding:0.8rem;display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:0.6rem;}
+#flag-picker .fp-item{display:flex;flex-direction:column;align-items:center;gap:0.3rem;cursor:pointer;
+  padding:0.4rem 0.3rem;border-radius:8px;border:1.5px solid transparent;background:rgba(255,255,255,0.03);}
+#flag-picker .fp-item:hover{border-color:var(--gold);background:rgba(246,201,14,0.07);}
+#flag-picker .fp-item.sel{border-color:var(--win);}
+#flag-picker .fp-item img{width:72px;height:48px;object-fit:contain;}
+#flag-picker .fp-item span{font-size:0.68rem;text-align:center;line-height:1.15;word-break:break-word;color:var(--text);}
+#flag-picker .fp-msg{grid-column:1/-1;color:var(--muted);font-size:0.82rem;padding:1rem;text-align:center;line-height:1.5;}
+#flag-picker .fp-foot{padding:0.5rem 0.9rem;border-top:1px solid var(--border);font-size:0.7rem;color:var(--muted);}
 .player-input-row input[type=text]{
   background:transparent;border:none;outline:none;
   color:var(--text);font-family:'Barlow',sans-serif;font-size:0.88rem;width:100%;
@@ -737,6 +758,130 @@ function setPlayerCount(n){
 }
 
 let _uploadIdx=-1;
+
+// ══════════════════════════════════════
+// FLAG PICKER — click a team's shield to choose from the flags folder or upload a file
+// Folder is listed from FLAGS_FOLDER + 'flags.json' (a JSON array of file names).
+// ══════════════════════════════════════
+const FLAGS_FOLDER = 'flags/';
+let _flagList = null;      // cached list of file names
+let _flagIdx  = -1;
+function flagLabel(file){
+  let n=file.replace(/\.[^.]+$/,'').replace(/^\s*\d+\s*-\s*/,'');   // drop extension and "01 - " prefix
+  if(/^[a-z0-9_-]+$/.test(n)) n=n.replace(/[-_]+/g,' ').replace(/(^|\s)([a-z])/g,(m,a,b)=>a+b.toUpperCase()); // slug-style names only
+  return n;
+}
+function flagSrc(file){
+  // encode everything URL-unsafe, including ' ( ) which would break url('...') in CSS
+  return FLAGS_FOLDER+encodeURIComponent(file).replace(/['()]/g,c=>'%'+c.charCodeAt(0).toString(16).toUpperCase());
+}
+async function loadFlagList(){
+  if(_flagList) return _flagList;
+  const res=await fetch(FLAGS_FOLDER+'flags.json',{cache:'no-cache'});
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  const data=await res.json();
+  const arr=(Array.isArray(data)?data:(data.files||[]))
+    .map(x=>typeof x==='string'?x:(x&&x.file))
+    .filter(f=>typeof f==='string'&&/\.(png|jpe?g|gif|svg|webp)$/i.test(f));
+  _flagList=arr.sort((a,b)=>flagLabel(a).localeCompare(flagLabel(b)));
+  return _flagList;
+}
+function refreshTeamImage(idx){
+  applyTeamOverrides();
+  const shown=playerImages[idx]||null;
+  const cz=document.getElementById(`wcz-${idx}`);
+  if(cz){
+    cz.innerHTML='';
+    if(shown){
+      const im=document.createElement('img');
+      im.src=shown;im.alt='';im.style.cssText='width:100%;height:100%;object-fit:cover;border-radius:3px';
+      cz.appendChild(im);
+    } else {
+      cz.innerHTML=`<span style="font-size:0.85rem;color:hsl(${(idx*137)%360},50%,55%)">🛡</span>`;
+    }
+  }
+  try{localStorage.setItem('wc_imgs',JSON.stringify(playerImages));}catch(e){}
+  updateImgCountLabel();
+  if(tournamentGenerated){renderGroupStage();renderKnockout();renderStandings();renderPot();}
+}
+function closeFlagPicker(){
+  const el=document.getElementById('flag-picker');
+  if(el) el.style.display='none';
+  _flagIdx=-1;
+}
+function pickFlag(file){
+  const idx=_flagIdx; if(idx<0) return;
+  playerImages[idx]=flagSrc(file);
+  closeFlagPicker();
+  refreshTeamImage(idx);
+}
+function openFlagPicker(idx){
+  _flagIdx=idx;
+  let el=document.getElementById('flag-picker');
+  if(!el){
+    el=document.createElement('div');
+    el.id='flag-picker';
+    el.innerHTML=`<div class="fp-box">
+      <div class="fp-hdr">
+        <span class="fp-title">Choose Team Image</span>
+        <input class="fp-search" id="fp-search" type="text" placeholder="Search flags…" autocomplete="off">
+        <button class="btn btn-sm" id="fp-upload">📁 Upload from computer</button>
+        <button class="btn btn-danger btn-sm" id="fp-remove">Remove image</button>
+        <button class="btn btn-sm" id="fp-close">✕</button>
+      </div>
+      <div class="fp-grid" id="fp-grid"></div>
+      <div class="fp-foot" id="fp-foot"></div>
+    </div>`;
+    document.body.appendChild(el);
+    el.addEventListener('click',e=>{ if(e.target===el) closeFlagPicker(); });
+    document.getElementById('fp-close').onclick=closeFlagPicker;
+    document.getElementById('fp-upload').onclick=()=>{
+      const i=_flagIdx; closeFlagPicker();
+      const shared=document.getElementById('wc-shared-crest');
+      if(shared&&i>=0){ _uploadIdx=i; shared.value=''; shared.click(); }
+    };
+    document.getElementById('fp-remove').onclick=()=>{
+      const i=_flagIdx; if(i<0) return;
+      delete playerImages[i]; closeFlagPicker(); refreshTeamImage(i);
+    };
+    document.getElementById('fp-search').addEventListener('input',()=>renderFlagGrid());
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&el.style.display!=='none') closeFlagPicker(); });
+  }
+  el.style.display='flex';
+  const name=players[idx]||`Team ${idx+1}`;
+  document.getElementById('fp-foot').textContent=`Choosing image for: ${name}`;
+  const search=document.getElementById('fp-search');
+  search.value='';
+  document.getElementById('fp-remove').style.display=playerImages[idx]?'':'none';
+  const grid=document.getElementById('fp-grid');
+  grid.innerHTML='<div class="fp-msg">Loading flags…</div>';
+  loadFlagList().then(()=>{renderFlagGrid();search.focus();}).catch(err=>{
+    grid.innerHTML=`<div class="fp-msg">Couldn't load <b>${FLAGS_FOLDER}flags.json</b> (${err.message}).<br>
+      Add a flags.json file listing the images in your flags folder, and open this page from your website
+      (not directly from a file). You can still use <b>Upload from computer</b>.</div>`;
+  });
+}
+function renderFlagGrid(){
+  const grid=document.getElementById('fp-grid');
+  if(!grid||!_flagList) return;
+  const q=(document.getElementById('fp-search').value||'').trim().toLowerCase();
+  const cur=playerImages[_flagIdx]||'';
+  const list=_flagList.filter(f=>!q||flagLabel(f).toLowerCase().includes(q)||f.toLowerCase().includes(q));
+  grid.innerHTML='';
+  if(!list.length){ grid.innerHTML='<div class="fp-msg">No flags match your search.</div>'; return; }
+  list.forEach(f=>{
+    const d=document.createElement('div');
+    d.className='fp-item'+(cur===flagSrc(f)?' sel':'');
+    d.title=flagLabel(f);
+    const im=document.createElement('img');
+    im.loading='lazy';im.alt='';im.src=flagSrc(f);
+    const sp=document.createElement('span');
+    sp.textContent=flagLabel(f);
+    d.appendChild(im);d.appendChild(sp);
+    d.onclick=()=>pickFlag(f);
+    grid.appendChild(d);
+  });
+}
 function buildPlayerInputs(){
   applyTeamOverrides();
   const g=document.getElementById('player-inputs');
@@ -786,10 +931,10 @@ function buildPlayerInputs(){
     glSpan.textContent=groupLabel(grp);
     // crest
     const cz=document.createElement('div');
-    cz.className='crest-zone';cz.id=`wcz-${i}`;cz.title='Upload team photo';
+    cz.className='crest-zone';cz.id=`wcz-${i}`;cz.title='Choose team flag / upload photo';
     if(src){const img=document.createElement('img');img.src=src;img.alt='';img.style.cssText='width:100%;height:100%;object-fit:cover;border-radius:3px';cz.appendChild(img);}
     else cz.innerHTML=`<span style="font-size:0.85rem;color:hsl(${hue},50%,55%)">🛡</span>`;
-    cz.addEventListener('click',(function(idx){return function(){_uploadIdx=idx;shared.value='';shared.click();};})(i));
+    cz.addEventListener('click',(function(idx){return function(){openFlagPicker(idx);};})(i));
     // num
     const numSpan=document.createElement('span');
     numSpan.className='player-num';
