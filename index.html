@@ -464,6 +464,7 @@ h1,h2,h3,.display{font-family:'Bebas Neue',cursive;letter-spacing:0.06em;}
         <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--muted);font-weight:700;margin-bottom:0.45rem">Teams qualifying from each group</div>
         <div style="display:flex;gap:0.5rem" id="qualifier-btns">
           <button class="count-btn" id="qual-btn-2" onclick="setQualifiers(2)">Top 2</button>
+          <button class="count-btn" id="qual-btn-3" onclick="setQualifiers(3)">Top 3</button>
           <button class="count-btn" id="qual-btn-4" onclick="setQualifiers(4)">Top 4</button>
         </div>
         <div style="font-size:0.72rem;color:var(--muted);margin-top:0.4rem" id="qualifier-note"></div>
@@ -529,6 +530,7 @@ h1,h2,h3,.display{font-family:'Bebas Neue',cursive;letter-spacing:0.06em;}
   <div class="stage-tabs" style="margin-bottom:0">
     <button class="stage-tab active" data-stab="group" onclick="switchPotTab('group')">⚰️ Group Stage</button>
     <button class="stage-tab" data-stab="r16" id="pot-tab-r16" style="display:none" onclick="switchPotTab('r16')">🎯 Final 16</button>
+    <button class="stage-tab" data-stab="r8" id="pot-tab-r8" style="display:none" onclick="switchPotTab('r8')">🎯 Final 8</button>
     <button class="stage-tab" data-stab="qf" onclick="switchPotTab('qf')">⚔️ Quarter-Finals</button>
   </div>
   <div style="padding-top:1rem" id="pot-content"></div>
@@ -600,8 +602,10 @@ let groups = [[], [], [], []]; // groups[0]=A, groups[1]=B, groups[2]=C, groups[
 // SF: QF1w v QF2w, QF3w v QF4w
 // Final: SF1w v SF2w  |  3rd: SF1l v SF2l
 // Qualifiers per group: 2 = straight to Quarter-Finals; 4 = extra "Final 16" round first.
+// Top 3 (qualifiers=3): group winners go straight to the QF; 2nd/3rd play the Final 8:
+//   A2vB3, B2vA3, C2vD3, D2vC3. QF: A1 v W(C2-D3), B1 v W(D2-C3), C1 v W(A2-B3), D1 v W(B2-A3)
 // Final 16 (qualifiers=4): A1vB4, B1vA4, A2vB3, B2vA3, C1vD4, D1vC4, C2vD3, D2vC3
-let qualifiers = 2;
+let qualifiers = 2;   // 2, 3 or 4
 let knockout = {
   r16: [
     {home:null,away:null},{home:null,away:null},{home:null,away:null},{home:null,away:null},
@@ -620,7 +624,7 @@ let knockout = {
   final: {home:null,away:null},
   third: {home:null,away:null},
 };
-// knockoutScores: {r16_0..r16_7 (top-4 mode only), qf0,qf1,qf2,qf3, sf0,sf1, final,third}
+// knockoutScores: {r16_0..r16_7 (top-4 only), r8_0..r8_3 (top-3 only), qf0,qf1,qf2,qf3, sf0,sf1, final,third}
 let knockoutScores = {};
 
 // Tiebreakers: manually selected winners for draws/group ties
@@ -661,9 +665,10 @@ function loadState(){
       groupSchedule=s.groupSchedule||[];
       groupScores=s.groupScores||{};
       groups=s.groups||[[],[],[],[]];
-      qualifiers=(s.qualifiers===4)?4:2;
+      qualifiers=(s.qualifiers===4||s.qualifiers===3)?s.qualifiers:2;
       knockout=s.knockout||emptyKnockout();
       if(!knockout.r16) knockout.r16=emptyKnockout().r16;
+      if(!knockout.r8) knockout.r8=emptyKnockout().r8;
       knockoutScores=s.knockoutScores||{};
       tiebreakers=s.tiebreakers||{};
       potPlayers=s.potPlayers||[];
@@ -1008,26 +1013,31 @@ function updateStats(){
   updateQualifierUI();
 }
 function updateQualifierUI(){
-  const b2=document.getElementById('qual-btn-2'), b4=document.getElementById('qual-btn-4');
-  if(b2) b2.classList.toggle('active',qualifiers===2);
-  if(b4) b4.classList.toggle('active',qualifiers===4);
+  [2,3,4].forEach(n=>{
+    const b=document.getElementById('qual-btn-'+n);
+    if(b) b.classList.toggle('active',qualifiers===n);
+  });
   const note=document.getElementById('qualifier-note');
   if(note) note.textContent = qualifiers===4
     ? 'Top 4 go through: adds a Final 16 round (8 extra matches) before the Quarter-Finals.'
+    : qualifiers===3
+    ? 'Top 3: winners go straight to the Quarter-Finals; 2nd and 3rd play a Final 8 round (4 extra matches).'
     : 'Top 2 go through: straight into the Quarter-Finals.';
   const ik=document.getElementById('info-knockout');
   if(ik){
     const m='<span style=\"color:var(--muted)\">';
+    const sf=`<div>${m}Semi-Finals:</span> QF winners play each other; SF losers play for 3rd/4th</div>`;
     ik.innerHTML = qualifiers===4
       ? `<div>${m}Final 16:</span> <span style=\"color:var(--gold)\">A1 v B4, B1 v A4, A2 v B3, B2 v A3</span> · <span style=\"color:var(--blue)\">C1 v D4, D1 v C4, C2 v D3, D2 v C3</span></div>
-         <div>${m}Quarter-Finals:</span> Final 16 winners (A/B side and C/D side kept apart)</div>
-         <div>${m}Semi-Finals:</span> QF winners play each other; SF losers play for 3rd/4th</div>`
-      : `<div>${m}Quarter-Finals:</span> <span style=\"color:var(--gold)\">A1 v B2, B1 v A2</span> · <span style=\"color:var(--blue)\">C1 v D2, D1 v C2</span></div>
-         <div>${m}Semi-Finals:</span> QF winners play each other; SF losers play for 3rd/4th</div>`;
+         <div>${m}Quarter-Finals:</span> Final 16 winners (A/B side and C/D side kept apart)</div>${sf}`
+      : qualifiers===3
+      ? `<div>${m}Final 8:</span> <span style=\"color:var(--gold)\">A2 v B3, B2 v A3</span> · <span style=\"color:var(--blue)\">C2 v D3, D2 v C3</span></div>
+         <div>${m}Quarter-Finals:</span> <span style=\"color:var(--gold)\">A1 v W(C2–D3), B1 v W(D2–C3)</span> · <span style=\"color:var(--blue)\">C1 v W(A2–B3), D1 v W(B2–A3)</span></div>${sf}`
+      : `<div>${m}Quarter-Finals:</span> <span style=\"color:var(--gold)\">A1 v B2, B1 v A2</span> · <span style=\"color:var(--blue)\">C1 v D2, D1 v C2</span></div>${sf}`;
   }
 }
 function setQualifiers(n){
-  if(n!==2&&n!==4) return;
+  if(n!==2&&n!==3&&n!==4) return;
   if(n===qualifiers) return;
   if(tournamentGenerated){
     if(!confirm(`Switch to Top ${n}? Group stage scores are kept, but ALL knockout scores and tiebreakers will be cleared.`)) return;
@@ -1205,7 +1215,7 @@ function generateTournament(){
   knockout=emptyKnockout();
   knockoutScores={qf0:{home:'',away:''},qf1:{home:'',away:''},qf2:{home:'',away:''},qf3:{home:'',away:''},
                   sf0:{home:'',away:''},sf1:{home:'',away:''},final:{home:'',away:''},third:{home:'',away:''}};
-  R16_KEYS.forEach(k=>{knockoutScores[k]={home:'',away:''};});
+  R16_KEYS.concat(R8_KEYS).forEach(k=>{knockoutScores[k]={home:'',away:''};});
   tiebreakers={};
   potPlayers=[];potScores={};
   playerRoundScores={};
@@ -1247,7 +1257,7 @@ function fillDummyGroups(){
 
   // Knockout rounds, one at a time (each round's teams come from the previous round).
   // Match winners are decided by giving the two teams different goal counts (no draws).
-  const stages=[['r16','ko_r16'],['qf','ko_qf'],['sf','ko_sf'],['final','ko_ko2']];
+  const stages=[['r16','ko_r16'],['r8','ko_r8'],['qf','ko_qf'],['sf','ko_sf'],['final','ko_ko2']];
   stages.forEach(([stage,storeKey])=>{
     const keys=koStageKeys(stage);
     if(!keys.length) return;
@@ -1313,14 +1323,15 @@ function renderGroupRoundBar(){
   // Separator
   const sep=document.createElement('span');
   sep.className='round-sep';rb.appendChild(sep);
-  // Final 16 round button (top-4 mode only)
-  if(qualifiers===4){
-    const r16Done=R16_KEYS.every(k=>isKOMatchComplete(k));
-    const r16Btn=document.createElement('button');
-    r16Btn.className='round-btn'+(currentGroupRound==='r16'?' active':'')+(r16Done?' complete':'');
-    r16Btn.textContent='\ud83c\udfaf Final 16';
-    r16Btn.onclick=()=>{currentGroupRound='r16';saveState();renderKORound('r16');renderGroupRoundBar();};
-    rb.appendChild(r16Btn);
+  // Final 16 / Final 8 round button (Top 4 / Top 3 modes)
+  if(hasPlayoff()){
+    const ps=playoffStage();
+    const pDone=playoffKeys().every(k=>isKOMatchComplete(k));
+    const pBtn=document.createElement('button');
+    pBtn.className='round-btn'+(currentGroupRound===ps?' active':'')+(pDone?' complete':'');
+    pBtn.textContent='\ud83c\udfaf '+playoffName();
+    pBtn.onclick=()=>{currentGroupRound=ps;saveState();renderKORound(ps);renderGroupRoundBar();};
+    rb.appendChild(pBtn);
   }
   // QF round button (4 matches now)
   const qfDone=isKOMatchComplete('qf0')&&isKOMatchComplete('qf1')&&isKOMatchComplete('qf2')&&isKOMatchComplete('qf3');
@@ -1437,7 +1448,7 @@ function renderGroupRound(r){
   html+=`<div style="display:flex;gap:0.75rem;margin-top:1.25rem;flex-wrap:wrap">`;
   if(r>0)html+=`<button class="btn btn-sec" onclick="selectGroupRound(${r-1})">← Matchday ${r}</button>`;
   if(r<totalR-1)html+=`<button class="btn btn-gold" onclick="selectGroupRound(${r+1})">Matchday ${r+2} →</button>`;
-  if(r===totalR-1)html+=`<button class="btn btn-gold" onclick="selectGroupRound('${firstKOStage()}')">${qualifiers===4?'\ud83c\udfaf Final 16':'⚔️ Quarter-Finals'} →</button>`;
+  if(r===totalR-1)html+=`<button class="btn btn-gold" onclick="selectGroupRound('${firstKOStage()}')">${hasPlayoff()?'\ud83c\udfaf '+playoffName():'⚔️ Quarter-Finals'} →</button>`;
   html+='</div>';
   cont.innerHTML=html;
 }
@@ -1455,10 +1466,10 @@ function renderKORound(stage){
   const cont=document.getElementById('group-match-content');
   if(!cont)return;
 
-  if(stage==='r16' && qualifiers!==4) stage='qf';
+  if((stage==='r16'&&qualifiers!==4)||(stage==='r8'&&qualifiers!==3)) stage='qf';
   const stageMatches = koMatchDefs(stage);
 
-  const stageTitle = stage==='r16' ? '\ud83c\udfaf Final 16' : stage==='qf' ? '\u2694\ufe0f Quarter-Finals' : stage==='sf' ? '\ud83c\udfdf\ufe0f Semi-Finals' : '\ud83c\udfc6 Final & 3rd Place';
+  const stageTitle = (stage==='r16'||stage==='r8') ? '\ud83c\udfaf '+koStageLabel(stage) : stage==='qf' ? '\u2694\ufe0f Quarter-Finals' : stage==='sf' ? '\ud83c\udfdf\ufe0f Semi-Finals' : '\ud83c\udfc6 Final & 3rd Place';
 
   let html=`<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem">
     <h2 style="font-family:'Bebas Neue',cursive;font-size:1.6rem">${stageTitle}</h2>
@@ -1490,7 +1501,7 @@ function renderKORound(stage){
     const badgeStyle=stage==='final'
       ? (key==='final'?'background:rgba(246,201,14,0.15);color:var(--gold)':'background:rgba(205,127,50,0.15);color:#cd7f32')
       : stage==='sf' ? 'background:rgba(168,85,247,0.15);color:#c084fc'
-      : stage==='r16' ? 'background:rgba(59,158,255,0.15);color:var(--blue)'
+      : (stage==='r16'||stage==='r8') ? 'background:rgba(59,158,255,0.15);color:var(--blue)'
       : 'background:rgba(246,201,14,0.1);color:var(--gold)';
     html+=`<div class="match-card">
       <div class="match-header">
@@ -1537,11 +1548,11 @@ function renderKORound(stage){
   html+=`</div>`;
   const perGroup=numPlayers/4, totalR=perGroup-1;
   html+=`<div style="display:flex;gap:0.75rem;margin-top:1.25rem;flex-wrap:wrap">`;
-  if(stage==='r16')
+  if(stage==='r16'||stage==='r8')
     html+=`<button class="btn btn-sec" onclick="selectGroupRound(${totalR-1})">\u2190 Matchday ${totalR}</button>
            <button class="btn btn-gold" onclick="selectGroupRound('qf')">\u2694\ufe0f Quarter-Finals \u2192</button>`;
   if(stage==='qf')
-    html+=`<button class="btn btn-sec" onclick="selectGroupRound(${qualifiers===4?"'r16'":totalR-1})">\u2190 ${qualifiers===4?'Final 16':'Matchday '+totalR}</button>
+    html+=`<button class="btn btn-sec" onclick="selectGroupRound(${hasPlayoff()?`'${playoffStage()}'`:totalR-1})">\u2190 ${hasPlayoff()?playoffName():'Matchday '+totalR}</button>
            <button class="btn btn-gold" onclick="selectGroupRound('sf')">\ud83c\udfdf\ufe0f Semi-Finals \u2192</button>`;
   if(stage==='sf')
     html+=`<button class="btn btn-sec" onclick="selectGroupRound('qf')">\u2190 Quarter-Finals</button>
@@ -1654,7 +1665,7 @@ function renderGroupTables(){
         <td>${crestHtml(s.idx,24,5)}</td>
         <td class="left"><div style="display:flex;align-items:center;gap:0.4rem">
           <span style="font-weight:700">${esc(s.name)}</span>
-          ${qualifies?`<span class="trophy-badge tb-gold" style="font-size:0.6rem;padding:0.08rem 0.3rem">${qualifiers===4?'F16':'QF'}</span>`:''}
+          ${qualifies?`<span class="trophy-badge tb-gold" style="font-size:0.6rem;padding:0.08rem 0.3rem">${qualBadge(pos)}</span>`:''}
         </div></td>
         <td style="color:var(--muted)">${s.p}</td>
         <td style="color:var(--win)">${s.w}</td>
@@ -1666,7 +1677,7 @@ function renderGroupTables(){
       </tr>`;
     });
     html+='</tbody></table>';
-    html+=`<div style="padding:0.5rem 0.9rem;border-top:1px solid var(--border);font-size:0.72rem;color:var(--muted)">🏆 Top ${qualifiers} advance to the ${qualifiers===4?'Final 16':'Quarter-Finals'}</div>`;
+    html+=`<div style="padding:0.5rem 0.9rem;border-top:1px solid var(--border);font-size:0.72rem;color:var(--muted)">🏆 ${qualFooter()}</div>`;
     html+='</div>';
   }
   html+='</div>';
@@ -1786,7 +1797,7 @@ function renderGroupFixtures(){
 
   // Knockout fixtures
   const koSections=[];
-  if(qualifiers===4) koSections.push({label:'Final 16', matches:koMatchDefs('r16')});
+  if(hasPlayoff()) koSections.push({label:playoffName(), matches:koMatchDefs(playoffStage())});
   koSections.push({label:'Quarter-Finals', matches:koMatchDefs('qf')});
   koSections.push({label:'Semi-Finals', matches:koMatchDefs('sf')});
   koSections.push({label:'3rd/4th Place Play-off & Final', matches:[
@@ -1813,7 +1824,7 @@ function renderGroupFixtures(){
         :`<span style="color:var(--muted)">—</span>`;
       const hGoals=done?`<span style="color:var(--win);font-weight:700">${hS}</span>/<span style="color:var(--muted)">${aS}</span>`
         :`<span style="color:var(--muted)">—</span>`;
-      const badgeCol=key==='final'?'var(--gold)':key==='third'?'#cd7f32':key.startsWith('r16')?'#60a5fa':'rgba(168,85,247,1)';
+      const badgeCol=key==='final'?'var(--gold)':key==='third'?'#cd7f32':(key.startsWith('r16')||key.startsWith('r8'))?'#60a5fa':'rgba(168,85,247,1)';
       html+=`<tr>
         <td><span style="font-family:'Bebas Neue',cursive;font-size:0.78rem;color:${badgeCol};background:${badgeCol}18;padding:0.1em 0.4em;border-radius:3px">${badge}</span></td>
         <td><div style="display:flex;align-items:center;gap:0.4rem">${m.home!==null?crestHtml(m.home,18,3):''}<span style="font-weight:${m.home!==null?'600':'400'};color:${m.home!==null?'var(--text)':'var(--muted)'}">${esc(hName)}</span></div></td>
@@ -2124,7 +2135,7 @@ function getKORoundsForQE(){
     {key:'sf',  label:'🏟️ SF'},
     {key:'ko2', label:'🏆 Final'},
   ];
-  if(qualifiers===4) rounds.unshift({key:'r16', label:'🎯 Final 16'});
+  if(hasPlayoff()) rounds.unshift({key:playoffStage(), label:'🎯 '+playoffName()});
   return rounds;
 }
 
@@ -2187,16 +2198,20 @@ function writeObsScreen(r){
 const WHEEL_SPIN_MS = 8000;
 const WHEEL_POOLS = [
   {key:'all',      label:'All Teams',                                      sub:'Every team in the tournament'},
-  {key:'p4qfko',   label:'4th + QF Losers + Knocked Out',                  sub:'4th place, the four QF losers (plus the Final 16 losers in Top 4 mode) and every group-stage knocked-out team'},
+  {key:'p4qfko',   label:'4th + QF Losers + Knocked Out',                  sub:'4th place, the four QF losers (plus the Final 16 / Final 8 losers in Top 4 / Top 3 mode) and every group-stage knocked-out team'},
   {key:'p4qfko_x', label:'4th + QF Losers + Knocked Out — no top scorer',  sub:'As above, minus the highest scorer in the Knocked Out pot'},
-  {key:'ko',       label:'Knocked Out only',                               sub:'Teams that missed out on the knockout rounds (3rd or lower, or 5th or lower in Top 4 mode)'},
+  {key:'ko',       label:'Knocked Out only',                               sub:'Teams that missed out on the knockout rounds (3rd or lower; 4th or lower in Top 3; 5th or lower in Top 4)'},
   {key:'ko_x',     label:'Knocked Out only — no top scorer',               sub:'Knocked Out teams, minus the highest scorer'},
-  // Top 4 mode only (hidden when only 2 teams qualify per group)
-  {key:'r16',      label:'Final 16 Losers only',                           sub:'The 8 teams knocked out in the Final 16', top4:true},
-  {key:'r16ko',    label:'Final 16 Losers + Knocked Out',                  sub:'The 8 Final 16 losers plus every group-stage knocked-out team', top4:true},
-  {key:'r16ko_x',  label:'Final 16 Losers + Knocked Out — no top scorer',  sub:'As above, minus the highest scorer in that group', top4:true},
+  // Top 4 mode only
+  {key:'r16',      label:'Final 16 Losers only',                           sub:'The 8 teams knocked out in the Final 16', mode:4},
+  {key:'r16ko',    label:'Final 16 Losers + Knocked Out',                  sub:'The 8 Final 16 losers plus every group-stage knocked-out team', mode:4},
+  {key:'r16ko_x',  label:'Final 16 Losers + Knocked Out — no top scorer',  sub:'As above, minus the highest scorer in that group', mode:4},
+  // Top 3 mode only
+  {key:'r8',       label:'Final 8 Losers only',                            sub:'The 4 teams knocked out in the Final 8', mode:3},
+  {key:'r8ko',     label:'Final 8 Losers + Knocked Out',                   sub:'The 4 Final 8 losers plus every group-stage knocked-out team', mode:3},
+  {key:'r8ko_x',   label:'Final 8 Losers + Knocked Out — no top scorer',   sub:'As above, minus the highest scorer in that group', mode:3},
 ];
-function availableWheelPools(){ return WHEEL_POOLS.filter(p=>!p.top4||qualifiers===4); }
+function availableWheelPools(){ return WHEEL_POOLS.filter(p=>!p.mode||p.mode===qualifiers); }
 let wheelPool = (()=>{ try{ return localStorage.getItem('wc_wheel_pool')||'all'; }catch(e){ return 'all'; } })();
 let wheelResult = null;        // {idx,label} once the OBS spin has finished
 let wheelSpinningUntil = 0;
@@ -2206,17 +2221,18 @@ function getWheelPool(key){
   let entries=[], excluded=[], warn=[];
   if(key==='all'){
     entries = Array.from({length:numPlayers},(_,i)=>i);
-  } else if(key==='r16' || key==='r16ko' || key==='r16ko_x'){
-    const r16L=R16_KEYS.map(k=>getKOLoser(k));
-    if(r16L.some(v=>v===null)) warn.push('Not all Final 16 losers are known yet.');
-    r16L.forEach(v=>{ if(v!==null) entries.push(v); });
-    if(key!=='r16'){
+  } else if(/^(r16|r8)(ko)?(_x)?$/.test(key)){
+    const isR8=key.startsWith('r8');
+    const pLosers=(isR8?R8_KEYS:R16_KEYS).map(k=>getKOLoser(k));
+    if(pLosers.some(v=>v===null)) warn.push(`Not all ${isR8?'Final 8':'Final 16'} losers are known yet.`);
+    pLosers.forEach(v=>{ if(v!==null) entries.push(v); });
+    if(key!=='r16'&&key!=='r8'){
       const exits=groupExits();
       if(!exits.length || [0,1,2,3].some(g=>getGroupWinner(g)===null))
         warn.push('Group stage isn\u2019t finished \u2014 the Knocked Out list is provisional.');
       exits.forEach(i=>entries.push(i));
     }
-    if(key==='r16ko_x'){
+    if(key.endsWith('_x')){
       const scored=Array.from(new Set(entries)).map(i=>({idx:i,goals:getPlayerTotalGoals(i)}));
       const top=Math.max(0,...scored.map(x=>x.goals));
       if(top>0){
@@ -2234,10 +2250,10 @@ function getWheelPool(key){
     if(key==='p4qfko' || key==='p4qfko_x'){
       const qfL=['qf0','qf1','qf2','qf3'].map(k=>getKOLoser(k));
       const fourth=getKOLoser('third');
-      if(qualifiers===4){
-        const r16L=R16_KEYS.map(k=>getKOLoser(k));
-        if(r16L.some(v=>v===null)) warn.push('Not all Final 16 losers are known yet.');
-        r16L.forEach(v=>{ if(v!==null) entries.push(v); });
+      if(hasPlayoff()){
+        const pL=playoffKeys().map(k=>getKOLoser(k));
+        if(pL.some(v=>v===null)) warn.push(`Not all ${playoffName()} losers are known yet.`);
+        pL.forEach(v=>{ if(v!==null) entries.push(v); });
       }
       if(qfL.some(v=>v===null)) warn.push('Not all Quarter-Final losers are known yet.');
       if(fourth===null) warn.push('4th place isn\u2019t decided yet.');
@@ -2403,7 +2419,7 @@ function renderQERoundContent(r){
     const ko = koRounds[r - totalR];
     storeKey   = 'ko_'+ko.key;
     roundLabel = ko.label;
-    roundDesc  = ko.key==='r16' ? 'Final 16' : ko.key==='qf' ? 'Quarter-Finals' : ko.key==='sf' ? 'Semi-Finals' : 'Final & 3rd Place';
+    roundDesc  = (ko.key==='r16'||ko.key==='r8') ? koStageLabel(ko.key) : ko.key==='qf' ? 'Quarter-Finals' : ko.key==='sf' ? 'Semi-Finals' : 'Final & 3rd Place';
   }
 
   if(!playerRoundScores[storeKey]) playerRoundScores[storeKey] = {};
@@ -2424,12 +2440,14 @@ function renderQERoundContent(r){
   if(isKORound){
     const koKey = storeKey.replace('ko_','');
     const matchKeys = koKey==='r16' ? R16_KEYS
+                     : koKey==='r8' ? R8_KEYS
                      : koKey==='qf' ? ['qf0','qf1','qf2','qf3']
                      : koKey==='sf' ? ['sf0','sf1']
                      : ['final','third'];
     matchKeys.forEach((mk,mi)=>{
       const m = getKOMatch(mk)||{home:null,away:null};
       const matchLabel = koKey==='r16' ? `F16-${mi+1}`
+                        : koKey==='r8' ? `F8-${mi+1}`
                         : koKey==='qf' ? `QF${mi+1}`
                         : koKey==='sf' ? `SF${mi+1}`
                         : mi===0 ? 'Final' : '3rd Place';
@@ -2520,13 +2538,13 @@ function renderQERoundContent(r){
     if(tiePanelHtml) html += tiePanelHtml;
     else if([0,1,2,3].every(g=>getGroupWinner(g)!==null) && [0,1,2,3].every(g=>getGroupRunner(g)!==null)){
       html += `<div style="margin-top:1rem;background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.2);border-radius:8px;padding:0.75rem 1rem;font-size:0.85rem;color:var(--win)">
-        ✅ All groups resolved — ${qualifiers===4?'Final 16 teams confirmed. Move to the 🎯 Final 16 tab.':'QF teams confirmed. Move to the ⚔️ QF tab.'}
+        ✅ All groups resolved — ${hasPlayoff()?`${playoffName()} teams confirmed. Move to the 🎯 ${playoffName()} tab.`:'QF teams confirmed. Move to the ⚔️ QF tab.'}
       </div>`;
     }
   }
 
   // For KO rounds — check for draws
-  const koRoundForKey = {'r16':R16_KEYS, 'qf':['qf0','qf1','qf2','qf3'], 'sf':['sf0','sf1'], 'ko2':['final','third']};
+  const koRoundForKey = {'r16':R16_KEYS, 'r8':R8_KEYS, 'qf':['qf0','qf1','qf2','qf3'], 'sf':['sf0','sf1'], 'ko2':['final','third']};
   if(typeof r === 'number' && r >= totalR){
     const koRounds2 = getKORoundsForQE();
     const ko = koRounds2[r - totalR];
@@ -2560,6 +2578,7 @@ function renderQERoundContent(r){
 // when scores are entered via Quick Entry rather than the match card inputs.
 function syncKOPlayerScoresToMatchScores(){
   const r16Rnd = playerRoundScores['ko_r16'] || {};
+  const r8Rnd  = playerRoundScores['ko_r8']  || {};
   const qfRnd  = playerRoundScores['ko_qf']  || {};
   const sfRnd  = playerRoundScores['ko_sf']  || {};
   const ko2Rnd = playerRoundScores['ko_ko2'] || {};
@@ -2580,7 +2599,20 @@ function syncKOPlayerScoresToMatchScores(){
         knockoutScores[key].away = val(r16Rnd, m.away);
       }
     });
-    deriveQFFromR16();
+    deriveQFFromPlayoff();
+  }
+  // Final 8 (top-3 mode) — then re-derive QF teams from its results
+  if(qualifiers===3 && knockout.r8){
+    R8_KEYS.forEach((key, ri) => {
+      const m = knockout.r8[ri];
+      if(m && m.home !== null && m.home !== undefined &&
+             m.away !== null && m.away !== undefined){
+        if(!knockoutScores[key]) knockoutScores[key] = {home:'', away:''};
+        knockoutScores[key].home = val(r8Rnd, m.home);
+        knockoutScores[key].away = val(r8Rnd, m.away);
+      }
+    });
+    deriveQFFromPlayoff();
   }
 
   // QFs
@@ -2653,7 +2685,7 @@ function setPlayerRoundScore(storeKey, pIdx, val){
 
   // Sync KO Quick Entry player goals into knockoutScores so match cards,
   // OBS Final/3rd and Results screens update correctly.
-  if(storeKey === 'ko_r16' || storeKey === 'ko_qf' || storeKey === 'ko_sf' || storeKey === 'ko_ko2'){
+  if(storeKey === 'ko_r16' || storeKey === 'ko_r8' || storeKey === 'ko_qf' || storeKey === 'ko_sf' || storeKey === 'ko_ko2'){
     syncKOPlayerScoresToMatchScores();
   }
 
@@ -2760,20 +2792,36 @@ function getGroupRunner(g){
 }
 
 // Rebuild every knockout fixture from group results + earlier knockout results.
-function deriveQFFromR16(){
-  QF_FROM_R16.forEach(([a,b],i)=>{
-    knockout.qf[i]={home:getKOWinner('r16_'+a),away:getKOWinner('r16_'+b)};
-  });
+function deriveQFFromPlayoff(){
+  if(qualifiers===4){
+    QF_FROM_R16.forEach(([a,b],i)=>{
+      knockout.qf[i]={home:getKOWinner('r16_'+a),away:getKOWinner('r16_'+b)};
+    });
+  } else if(qualifiers===3){
+    // Group winners go straight in, facing a Final 8 winner from the other half
+    QF_R8_OPP.forEach((r8i,g)=>{
+      knockout.qf[g]={home:getGroupPos(g,0),away:getKOWinner('r8_'+r8i)};
+    });
+  }
 }
 function deriveKnockout(){
   if(!knockout.r16) knockout.r16=emptyKnockout().r16;
+  if(!knockout.r8)  knockout.r8=emptyKnockout().r8;
   if(qualifiers===4){
     R16_SEEDS.forEach(([h,a],i)=>{
       knockout.r16[i]={home:getGroupPos(h[0],h[1]),away:getGroupPos(a[0],a[1])};
     });
-    deriveQFFromR16();
+    knockout.r8=emptyKnockout().r8;
+    deriveQFFromPlayoff();
+  } else if(qualifiers===3){
+    R8_SEEDS.forEach(([h,a],i)=>{
+      knockout.r8[i]={home:getGroupPos(h[0],h[1]),away:getGroupPos(a[0],a[1])};
+    });
+    knockout.r16=emptyKnockout().r16;
+    deriveQFFromPlayoff();
   } else {
     knockout.r16=emptyKnockout().r16;
+    knockout.r8=emptyKnockout().r8;
     const w=[0,1,2,3].map(g=>getGroupWinner(g));
     const r=[0,1,2,3].map(g=>getGroupRunner(g));
     knockout.qf[0]={home:w[0], away:r[1]}; // A1 vs B2
@@ -2809,21 +2857,44 @@ const R16_SEEDS=[
 ];
 // Which two Final 16 winners meet in each QF (top-4 mode)
 const QF_FROM_R16=[[0,3],[1,2],[4,7],[5,6]];
+// Top 3 mode: Final 8 = 2nd v 3rd across groups (A2vB3, B2vA3, C2vD3, D2vC3)
+const R8_KEYS=['r8_0','r8_1','r8_2','r8_3'];
+const R8_SEEDS=[
+  [[0,1],[1,2]], // F8-1: A2 v B3
+  [[1,1],[0,2]], // F8-2: B2 v A3
+  [[2,1],[3,2]], // F8-3: C2 v D3
+  [[3,1],[2,2]], // F8-4: D2 v C3
+];
+// Top 3 mode QFs: each group winner (A,B,C,D) plays a Final 8 winner from the other half
+const QF_R8_OPP=[2,3,0,1]; // A1 v F8-3 (C2-D3), B1 v F8-4 (D2-C3), C1 v F8-1 (A2-B3), D1 v F8-2 (B2-A3)
+// Helpers for the extra round before the QF (Final 16 in Top 4, Final 8 in Top 3)
+function hasPlayoff(){return qualifiers===3||qualifiers===4;}
+function playoffStage(){return qualifiers===4?'r16':qualifiers===3?'r8':null;}
+function playoffKeys(){return qualifiers===4?R16_KEYS:qualifiers===3?R8_KEYS:[];}
+function playoffName(){return qualifiers===4?'Final 16':'Final 8';}
+function playoffBadge(){return qualifiers===4?'F16':'F8';}
+function qualBadge(pos){return qualifiers===4?'F16':qualifiers===3?(pos===0?'QF':'F8'):'QF';}
+function qualFooter(){
+  return qualifiers===4?'Top 4 advance to the Final 16'
+       : qualifiers===3?'Winner advances to the Quarter-Finals; 2nd and 3rd play the Final 8'
+       : 'Top 2 advance to the Quarter-Finals';
+}
 const POS_WORD=['Winner','Runner-Up','3rd','4th'];
 function emptyMatch(){return {home:null,away:null};}
 function emptyKnockout(){
   return {
     r16:[0,1,2,3,4,5,6,7].map(emptyMatch),
+    r8:[0,1,2,3].map(emptyMatch),
     qf:[0,1,2,3].map(emptyMatch),
     sf:[0,1].map(emptyMatch),
     final:emptyMatch(),
     third:emptyMatch(),
   };
 }
-function isKOStage(st){return st==='r16'||st==='qf'||st==='sf'||st==='final';}
-function firstKOStage(){return qualifiers===4?'r16':'qf';}
+function isKOStage(st){return st==='r16'||st==='r8'||st==='qf'||st==='sf'||st==='final';}
+function firstKOStage(){return playoffStage()||'qf';}
 function koStageLabel(st){
-  return st==='r16'?'Final 16':st==='qf'?'Quarter-Finals':st==='sf'?'Semi-Finals':'Final';
+  return st==='r16'?'Final 16':st==='r8'?'Final 8':st==='qf'?'Quarter-Finals':st==='sf'?'Semi-Finals':'Final';
 }
 function seedShort(gp){return groupLabel(gp[0])+(gp[1]+1);}
 function seedLabel(gp){
@@ -2839,7 +2910,21 @@ function koMatchDefs(stage){
       homeLabel:seedLabel(sd[0]), awayLabel:seedLabel(sd[1])
     }));
   }
+  if(stage==='r8'){
+    return R8_SEEDS.map((sd,i)=>({
+      key:'r8_'+i, label:`Final 8 \u2014 Match ${i+1}`, badge:'F8-'+(i+1),
+      short:`F8-${i+1} \u2014 ${seedShort(sd[0])} vs ${seedShort(sd[1])}`,
+      homeLabel:seedLabel(sd[0]), awayLabel:seedLabel(sd[1])
+    }));
+  }
   if(stage==='qf'){
+    if(qualifiers===3){
+      return QF_R8_OPP.map((r8i,g)=>({
+        key:'qf'+g, label:`Quarter-Final ${g+1}`, badge:'QF'+(g+1),
+        short:`QF${g+1} \u2014 ${groupLabel(g)}1 vs F8-${r8i+1} Winner`,
+        homeLabel:`Group ${groupLabel(g)} Winner`, awayLabel:`Final 8 Match ${r8i+1} Winner`
+      }));
+    }
     if(qualifiers===4){
       return QF_FROM_R16.map(([a,b],i)=>({
         key:'qf'+i, label:`Quarter-Final ${i+1}`, badge:'QF'+(i+1),
@@ -2868,15 +2953,17 @@ function koMatchDefs(stage){
 // Match keys for a stage ('ko2' is the Quick Entry name for the Final/3rd round)
 function koStageKeys(stage){
   if(stage==='r16') return qualifiers===4?R16_KEYS:[];
+  if(stage==='r8') return qualifiers===3?R8_KEYS:[];
   if(stage==='qf') return QF_KEYS;
   if(stage==='sf') return SF_KEYS;
   return ['final','third'];
 }
 function allKOKeys(){
-  return (qualifiers===4?R16_KEYS:[]).concat(QF_KEYS,SF_KEYS,['final','third']);
+  return playoffKeys().concat(QF_KEYS,SF_KEYS,['final','third']);
 }
 function koKeyLabel(key){
   let m=/^r16_(\d)$/.exec(key); if(m) return `Final 16 Match ${parseInt(m[1])+1}`;
+  m=/^r8_(\d)$/.exec(key); if(m) return `Final 8 Match ${parseInt(m[1])+1}`;
   if(key.startsWith('qf')) return `Quarter-Final ${parseInt(key.slice(2))+1}`;
   if(key.startsWith('sf')) return `Semi-Final ${parseInt(key.slice(2))+1}`;
   return key==='final'?'\ud83c\udfc6 Final':'\ud83e\udd49 3rd Place';
@@ -2925,6 +3012,8 @@ function getKOLoser(key){
 function getKOMatch(key){
   const rm=/^r16_(\d)$/.exec(key);
   if(rm) return (knockout.r16&&knockout.r16[parseInt(rm[1])])||null;
+  const r8m=/^r8_(\d)$/.exec(key);
+  if(r8m) return (knockout.r8&&knockout.r8[parseInt(r8m[1])])||null;
   if(key==='qf0')return knockout.qf[0];
   if(key==='qf1')return knockout.qf[1];
   if(key==='qf2')return knockout.qf[2];
@@ -2972,17 +3061,18 @@ function renderKnockout(){
 
   if(!allGroupsDone){
     html+=`<div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:1rem 1.25rem;margin-bottom:1.25rem;color:var(--draw)">
-      ⚠️ Complete all group stage matches to unlock the ${qualifiers===4?'Final 16':'Quarter-Finals'}
+      ⚠️ Complete all group stage matches to unlock the ${hasPlayoff()?playoffName():'Quarter-Finals'}
     </div>`;
   }
 
-  // Final 16 Section (8 matches, top-4 mode only)
-  if(qualifiers===4){
+  // Final 16 (8 matches, Top 4) / Final 8 (4 matches, Top 3) section
+  if(hasPlayoff()){
+    const ps=playoffStage();
     html+=`<div class="bracket-section">
-      <div class="bracket-title"><span style="color:var(--blue)">🎯</span> Final 16</div>
+      <div class="bracket-title"><span style="color:var(--blue)">🎯</span> ${playoffName()}</div>
       <div class="bracket-grid-4">`;
-    koMatchDefs('r16').forEach(({short,key},ri)=>{
-      html+=renderKOMatch(short,key,knockout.r16[ri],getKOScore(key));
+    koMatchDefs(ps).forEach(({short,key},ri)=>{
+      html+=renderKOMatch(short,key,knockout[ps][ri],getKOScore(key));
     });
     html+='</div></div>';
   }
@@ -3187,7 +3277,9 @@ function renderPot(){
 
   const r16Tab=document.getElementById('pot-tab-r16');
   if(r16Tab) r16Tab.style.display = qualifiers===4 ? '' : 'none';
-  if(activePotTab==='r16' && qualifiers!==4){
+  const r8Tab=document.getElementById('pot-tab-r8');
+  if(r8Tab) r8Tab.style.display = qualifiers===3 ? '' : 'none';
+  if((activePotTab==='r16' && qualifiers!==4)||(activePotTab==='r8' && qualifiers!==3)){
     activePotTab='group';
     document.querySelectorAll('#page-pot [data-stab]').forEach(t=>t.classList.toggle('active',t.dataset.stab==='group'));
   }
@@ -3206,9 +3298,18 @@ function renderPot(){
     title='⚰️ Knocked Out — Group Stage';
     desc=qualifiers===4
       ? 'Teams that finished 5th or lower in their group and did not reach the Final 16.'
+      : qualifiers===3
+      ? 'Teams that finished 4th or lower in their group and did not reach the Final 8.'
       : 'Teams that finished 3rd or lower in their group and did not reach the Quarter-Finals.';
     prizeLabel='Best of the Knocked Out';
     emptyMsg='No teams eliminated yet. Complete the group stage to populate this list.';
+  } else if(activePotTab==='r8'){
+    eliminated=R8_KEYS.map(k=>getKOLoser(k)).filter(idx=>idx!==null)
+      .map(idx=>({playerIdx:idx,goals:getPlayerTotalGoals(idx)}));
+    title='🎯 Knocked Out — Final 8';
+    desc='Teams that lost their Final 8 match and did not reach the Quarter-Finals.';
+    prizeLabel='Best of the Final 8 Losers';
+    emptyMsg='No teams eliminated at the Final 8 stage yet. Complete the Final 8 to populate this list.';
   } else if(activePotTab==='r16'){
     eliminated=R16_KEYS.map(k=>getKOLoser(k)).filter(idx=>idx!==null)
       .map(idx=>({playerIdx:idx,goals:getPlayerTotalGoals(idx)}));
@@ -3267,8 +3368,8 @@ function renderPot(){
           <th class="left">Team</th>
           <th>Total Goals</th>`;
   for(let r=0;r<totalR;r++) html+=`<th title="Round ${r+1}">R${r+1}</th>`;
-  if(activePotTab==='r16') html+=`<th title="Final 16">F16</th>`;
-  if(activePotTab==='qf'){ if(qualifiers===4) html+=`<th title="Final 16">F16</th>`; html+=`<th title="Quarter-Final">QF</th>`; }
+  if(activePotTab==='r16'||activePotTab==='r8') html+=`<th title="${playoffName()}">${playoffBadge()}</th>`;
+  if(activePotTab==='qf'){ if(hasPlayoff()) html+=`<th title="${playoffName()}">${playoffBadge()}</th>`; html+=`<th title="Quarter-Final">QF</th>`; }
   html+=`</tr></thead><tbody>`;
 
   eliminated.forEach((entry,pos)=>{
@@ -3285,8 +3386,9 @@ function renderPot(){
       const has=v!==undefined&&v!==''&&v!==null;
       html+=`<td style="color:${has?'var(--text)':'var(--muted)'};">${has?v:'–'}</td>`;
     }
-    if(activePotTab==='r16'||(activePotTab==='qf'&&qualifiers===4)){
-      const fV=playerRoundScores['ko_r16']&&(playerRoundScores['ko_r16'][String(idx)]??playerRoundScores['ko_r16'][idx]);
+    if(activePotTab==='r16'||activePotTab==='r8'||(activePotTab==='qf'&&hasPlayoff())){
+      const pk='ko_'+playoffStage();
+      const fV=playerRoundScores[pk]&&(playerRoundScores[pk][String(idx)]??playerRoundScores[pk][idx]);
       const hasF=fV!==undefined&&fV!==''&&fV!==null;
       html+=`<td style="color:${hasF?'var(--text)':'var(--muted)'};">${hasF?fV:'–'}</td>`;
     }

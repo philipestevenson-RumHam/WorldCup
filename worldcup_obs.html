@@ -58,7 +58,7 @@ body::after{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%,
   letter-spacing:0.1em;padding:0.18em 0.7em;border-radius:5px;flex-shrink:0;
   width:clamp(90px,10vw,140px);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .sb-group{background:rgba(59,158,255,0.12);color:var(--blue);border:1px solid rgba(59,158,255,0.25);}
-.sb-r16{background:rgba(59,158,255,0.12);color:var(--blue);border:1px solid rgba(59,158,255,0.25);}
+.sb-r16,.sb-r8{background:rgba(59,158,255,0.12);color:var(--blue);border:1px solid rgba(59,158,255,0.25);}
 .sb-qf{background:rgba(246,201,14,0.12);color:var(--gold);border:1px solid rgba(246,201,14,0.25);}
 .sb-sf{background:rgba(168,85,247,0.12);color:#c084fc;border:1px solid rgba(168,85,247,0.25);}
 .sb-final{background:rgba(246,201,14,0.18);color:var(--gold);border:1px solid rgba(246,201,14,0.4);
@@ -175,7 +175,7 @@ input[type=range].speed-slider::-moz-range-thumb{width:13px;height:13px;border-r
 .gb-b{background:rgba(168,85,247,0.15);color:var(--gb);}
 .gb-c{background:rgba(34,197,94,0.15);color:var(--gc);}
 .gb-d{background:rgba(245,158,11,0.15);color:var(--gd);}
-.gb-r16{background:rgba(59,158,255,0.15);color:var(--blue);}
+.gb-r16,.gb-r8{background:rgba(59,158,255,0.15);color:var(--blue);}
 .gb-qf{background:rgba(246,201,14,0.15);color:var(--gold);}
 .gb-sf{background:rgba(168,85,247,0.15);color:#c084fc;}
 .gb-fin{background:rgba(246,201,14,0.2);color:var(--gold);}
@@ -683,7 +683,7 @@ function buildAllRounds(data){
   // Group Tables — shows after last matchday, before QF (all rounds = same as last round-tables)
   rounds.push({type:'group-tables', label:'Group Tables'});
 
-  const qualifiers = (data.qualifiers===4)?4:2;
+  const qualifiers = (data.qualifiers===4||data.qualifiers===3)?data.qualifiers:2;
 
   // Final 16 — 8 matches (Top 4 mode only): A1vB4, B1vA4, A2vB3, B2vA3, C1vD4, D1vC4, C2vD3, D2vC3
   if(qualifiers===4){
@@ -701,8 +701,29 @@ function buildAllRounds(data){
     rounds.push({type:'r16', label:'Final 16', matches:r16Matches});
   }
 
+  // Final 8 — 4 matches (Top 3 mode only): A2vB3, B2vA3, C2vD3, D2vC3
+  if(qualifiers===3){
+    const seeds8=['A2 vs B3','B2 vs A3','C2 vs D3','D2 vs C3'];
+    const r8Matches = seeds8.map((sd,idx)=>{
+      const key='r8_'+idx;
+      const m=(ko.r8&&ko.r8[idx])||{home:null,away:null};
+      const sc=ks[key]||{};
+      return {
+        home:m.home, away:m.away,
+        hScore:(sc.home??''), aScore:(sc.away??''),
+        key, type:'r8', label:`F8-${idx+1} — ${sd}`
+      };
+    });
+    rounds.push({type:'r8', label:'Final 8', matches:r8Matches});
+  }
+
   // Quarter-Finals — 4 matches, always shown once tournament is generated
-  const qfDefs = qualifiers===4 ? [
+  const qfDefs = qualifiers===3 ? [
+    {idx:0, key:'qf0', label:'QF1 — A1 vs F8-3 Winner'},
+    {idx:1, key:'qf1', label:'QF2 — B1 vs F8-4 Winner'},
+    {idx:2, key:'qf2', label:'QF3 — C1 vs F8-1 Winner'},
+    {idx:3, key:'qf3', label:'QF4 — D1 vs F8-2 Winner'},
+  ] : qualifiers===4 ? [
     {idx:0, key:'qf0', label:'QF1 — F16-1 Winner vs F16-4 Winner'},
     {idx:1, key:'qf1', label:'QF2 — F16-2 Winner vs F16-3 Winner'},
     {idx:2, key:'qf2', label:'QF3 — F16-5 Winner vs F16-8 Winner'},
@@ -808,6 +829,7 @@ function matchBadgeHtml(m){
     return `<span class="grp-badge ${cls[m.group]||''}">Group ${labels[m.group]||'?'}</span>`;
   }
   if(m.type==='r16') return `<span class="grp-badge gb-r16">Final 16</span>`;
+  if(m.type==='r8')  return `<span class="grp-badge gb-r8">Final 8</span>`;
   if(m.type==='qf')  return `<span class="grp-badge gb-qf">Quarter-Final</span>`;
   if(m.type==='sf')  return `<span class="grp-badge gb-sf">Semi-Final</span>`;
   if(m.type==='final') return `<span class="grp-badge gb-fin">🏆 Final</span>`;
@@ -1033,6 +1055,7 @@ function render(){
   else if(round.type==='group-tables'){sb.textContent='Group Tables';sb.className='stage-badge sb-group';}
   else if(round.type==='round-tables'){sb.textContent='Group Tables';sb.className='stage-badge sb-group';}
   else if(round.type==='r16'){sb.textContent='Final 16';sb.className='stage-badge sb-r16';}
+  else if(round.type==='r8'){sb.textContent='Final 8';sb.className='stage-badge sb-r8';}
   else if(round.type==='qf'){sb.textContent='Quarter-Finals';sb.className='stage-badge sb-qf';}
   else if(round.type==='sf'){sb.textContent='Semi-Finals';sb.className='stage-badge sb-sf';}
   else if(round.type==='results'){sb.textContent='Final Results';sb.className='stage-badge sb-final';}
@@ -1173,14 +1196,14 @@ function render(){
     }
     updateCycleInd();
   } else {
-    const isKO = round.type==='qf'||round.type==='sf'||round.type==='final';
+    const isKO = round.type==='qf'||round.type==='sf'||round.type==='final'||round.type==='r8';
     let cols, rows;
     if(round.type==='r16'){
       // 8 Final 16 matches — compact cards, 2 columns x 4 rows (or fewer if some teams are still TBD)
       cols = n<=1?1:2;
       rows = Math.ceil(n/cols);
-    } else if(round.type==='qf'){
-      // 4 QF matches — 2x2 grid
+    } else if(round.type==='qf'||round.type==='r8'){
+      // 4 QF / Final 8 matches — 2x2 grid
       cols = n<=1?1:2;
       rows = Math.ceil(n/cols);
     } else if(isKO){
@@ -1194,7 +1217,7 @@ function render(){
     grid.style.gridTemplateColumns=`repeat(${cols},1fr)`;
     grid.style.gridTemplateRows=`repeat(${rows},1fr)`;
     const crestPx = isKO
-      ? Math.min(Math.round(window.innerHeight*(round.type==='qf'?0.16:0.28)), round.type==='qf'?160:240)
+      ? Math.min(Math.round(window.innerHeight*((round.type==='qf'||round.type==='r8')?0.16:0.28)), (round.type==='qf'||round.type==='r8')?160:240)
       : round.type==='r16'
         ? Math.min(Math.round(window.innerHeight*0.09),70)
         : Math.min(Math.round(window.innerWidth/(cols*4)),60);
@@ -1252,6 +1275,7 @@ function obsRoundIdxForKey(key, rounds){
     if(key==='draw'         && r.type==='draw')         return i;
     if(key==='group-tables' && r.type==='group-tables') return i;
     if(key==='r16'          && r.type==='r16')          return i;
+    if(key==='r8'           && r.type==='r8')           return i;
     if(key==='qf'           && r.type==='qf')           return i;
     if(key==='sf'           && r.type==='sf')           return i;
     if(key==='final'        && r.type==='final')        return i;
@@ -1561,7 +1585,7 @@ function load(){
       groups:       s.groups||[[],[],[],[]],
       groupSchedule:s.groupSchedule||[],
       groupScores:  s.groupScores||{},
-      qualifiers:   (s.qualifiers===4)?4:2,
+      qualifiers:   (s.qualifiers===4||s.qualifiers===3)?s.qualifiers:2,
       knockout:     s.knockout||{qf:[{home:null,away:null},{home:null,away:null},{home:null,away:null},{home:null,away:null}],sf:[{home:null,away:null},{home:null,away:null}],final:{home:null,away:null},third:{home:null,away:null}},
       knockoutScores:s.knockoutScores||{},
       playerRoundScores:s.playerRoundScores||{},
@@ -1682,7 +1706,7 @@ function renderObsGroupTables(upToRound, onlyGroup){
           <th style="${hfs};color:var(--gold);text-align:center;padding:clamp(2px,0.35vh,5px) clamp(4px,0.6vw,8px)">PTS</th>
         </tr></thead><tbody>`;
     st.forEach((s,pos)=>{
-      const qualN=(lastData&&lastData.qualifiers===4)?4:2;
+      const qualN=(lastData&&(lastData.qualifiers===4||lastData.qualifiers===3))?lastData.qualifiers:2;
       const qualifies=pos<qualN;
       const isWinner=pos===0;
       const gd=s.gd>0?`+${s.gd}`:s.gd;
@@ -1698,7 +1722,7 @@ function renderObsGroupTables(upToRound, onlyGroup){
       html+=`<tr style="${rowBg};border-bottom:1px solid rgba(255,255,255,0.05)">
         <td style="text-align:center;${hfs};color:${rankCol};padding:clamp(2px,0.4vh,6px) clamp(4px,0.6vw,8px)">${pos+1}</td>
         <td style="padding:clamp(2px,0.3vh,4px) clamp(2px,0.3vw,5px)">${crestEl}</td>
-        <td style="text-align:left;${fs};font-weight:700;padding:clamp(2px,0.4vh,6px) clamp(4px,0.6vw,8px);color:${qualifies?'var(--gold)':'var(--text)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:calc(clamp(60px,9vw,140px)*var(--ts,1))">${esc(name)}${qualifies?` <span style="font-size:calc(clamp(0.38rem,0.65vw,0.55rem)*var(--ts,1));background:rgba(246,201,14,0.15);color:var(--gold);padding:0.05em 0.3em;border-radius:2px">${qualN===4?'F16':'QF'}</span>`:''}</td>
+        <td style="text-align:left;${fs};font-weight:700;padding:clamp(2px,0.4vh,6px) clamp(4px,0.6vw,8px);color:${qualifies?'var(--gold)':'var(--text)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:calc(clamp(60px,9vw,140px)*var(--ts,1))">${esc(name)}${qualifies?` <span style="font-size:calc(clamp(0.38rem,0.65vw,0.55rem)*var(--ts,1));background:rgba(246,201,14,0.15);color:var(--gold);padding:0.05em 0.3em;border-radius:2px">${qualN===4?'F16':qualN===3?(pos===0?'QF':'F8'):'QF'}</span>`:''}</td>
         <td style="text-align:center;${fs};color:var(--muted);padding:clamp(2px,0.4vh,6px) clamp(4px,0.6vw,8px)">${s.p}</td>
         <td style="text-align:center;${fs};color:var(--win);padding:clamp(2px,0.4vh,6px) clamp(4px,0.6vw,8px)">${s.w}</td>
         <td style="text-align:center;${fs};color:var(--draw);padding:clamp(2px,0.4vh,6px) clamp(4px,0.6vw,8px)">${s.d}</td>
@@ -1872,6 +1896,8 @@ function renderResultsScreen(){
     if(key==='qf3') return (ko.qf&&ko.qf[3])||{home:null,away:null};
     const rm=/^r16_(\d)$/.exec(key);
     if(rm) return (ko.r16&&ko.r16[parseInt(rm[1])])||{home:null,away:null};
+    const rm8=/^r8_(\d)$/.exec(key);
+    if(rm8) return (ko.r8&&ko.r8[parseInt(rm8[1])])||{home:null,away:null};
     if(key==='sf0') return (ko.sf&&ko.sf[0])||{home:null,away:null};
     if(key==='sf1') return (ko.sf&&ko.sf[1])||{home:null,away:null};
     if(key==='final') return ko.final||{home:null,away:null};
@@ -1991,10 +2017,14 @@ function renderResultsScreen(){
     ${qfLosers.map(idx=>sfOutCard(idx)).join('')}
   </div>`;
 
-  // ── Final 16 losers (Top 4 mode) — the 8 teams out before the Quarter-Finals ──
+  // ── Final 16 / Final 8 losers (Top 4 / Top 3 mode) — teams out before the Quarter-Finals ──
   let r16Html='';
-  if(lastData.qualifiers===4){
-    const r16Losers = ['r16_0','r16_1','r16_2','r16_3','r16_4','r16_5','r16_6','r16_7']
+  if(lastData.qualifiers===4||lastData.qualifiers===3){
+    const pName16 = lastData.qualifiers===4 ? 'Final 16' : 'Final 8';
+    const pKeys = lastData.qualifiers===4
+      ? ['r16_0','r16_1','r16_2','r16_3','r16_4','r16_5','r16_6','r16_7']
+      : ['r8_0','r8_1','r8_2','r8_3'];
+    const r16Losers = pKeys
       .map(k=>koLoser(k))
       .filter(idx=>idx!==null)
       .map(idx=>({idx, goals:getPlayerTotalGoals(idx)}))
@@ -2015,16 +2045,16 @@ function renderResultsScreen(){
         ${e.goals>0?`<span class="ko-lb-goals">${e.goals} ⚽</span>`:''}
       </div>`;
     });
-    if(!rows) rows=`<div style="color:var(--muted);font-family:'Bebas Neue',cursive;font-size:clamp(0.8rem,1.5vw,1.2rem);padding:0.5rem">No Final 16 losers yet</div>`;
+    if(!rows) rows=`<div style="color:var(--muted);font-family:'Bebas Neue',cursive;font-size:clamp(0.8rem,1.5vw,1.2rem);padding:0.5rem">No ${pName16} losers yet</div>`;
     r16Html=`<div class="r16-out-wrap">
-      <div class="r16-out-title">🎯 Out at the Final 16</div>
+      <div class="r16-out-title">🎯 Out at the ${pName16}</div>
       <div class="r16-out-list">${rows}</div>
     </div>`;
   }
 
   // Build knocked-out list — anyone outside the qualifying places in their group
   // (top 2 advance to the Quarter-Finals, or top 4 to the Final 16 in Top 4 mode)
-  const qualN = (lastData.qualifiers===4)?4:2;
+  const qualN = (lastData.qualifiers===4||lastData.qualifiers===3)?lastData.qualifiers:2;
   const potList=[];
   for(let g=0;g<4;g++){
     const st=calcGroupStandings(g,lastData);
@@ -2035,7 +2065,8 @@ function renderResultsScreen(){
   }
   potList.sort((a,b)=>b.goals-a.goals);
 
-  const cols2 = potList.length > 16 ? 3 : potList.length > 8 ? 2 : 1;
+  const cols2 = r16Html ? (potList.length > 8 ? 2 : 1)   // narrower column when the Final 16 / Final 8 column is showing
+                         : (potList.length > 16 ? 3 : potList.length > 8 ? 2 : 1);
   const tableStyle = cols2 > 1
     ? `display:grid;grid-template-columns:repeat(${cols2},1fr);gap:clamp(3px,0.4vw,6px);`
     : 'display:flex;flex-direction:column;gap:clamp(2px,0.35vh,5px);';
@@ -2069,7 +2100,11 @@ function renderResultsScreen(){
     <div class="ko-lb-table" style="${tableStyle}">${koRows}</div>
   </div>`;
 
-  return `<div class="results-wrap${r16Html?' has-r16':''}">${podiumHtml}${sfOutHtml}${r16Html}${koHtml}</div>`;
+  // With the extra Final 16 / Final 8 column, give a long Knocked Out list more room
+  const wrapCols = !r16Html ? ''
+    : potList.length>8  ? 'grid-template-columns:1fr 0.85fr 0.85fr 1.6fr;'
+    : '';
+  return `<div class="results-wrap${r16Html?' has-r16':''}" style="${wrapCols}">${podiumHtml}${sfOutHtml}${r16Html}${koHtml}</div>`;
 }
 
 // ══════════════════════════════════════
@@ -2208,6 +2243,8 @@ async function _downloadImagePackInner(){
       screens.push({key:`round-tables-${r.upToRound}`, label:`${n()} - Tables after Round ${(r.upToRound??0)+1}`, setup:(()=>{const ri=allRounds.indexOf(r);return()=>{obsRound=ri;render();};})()} );
     } else if(r.type==='group-tables'){
       screens.push({key:'group-tables', label:`${n()} - Group Tables`, setup:(()=>{const ri=allRounds.indexOf(r);return()=>{obsRound=ri;render();};})()} );
+    } else if(r.type==='r8'){
+      screens.push({key:'r8', label:`${n()} - Final 8`, setup:(()=>{const ri=allRounds.indexOf(r);return()=>{obsRound=ri;render();};})()} );
     } else if(r.type==='r16'){
       screens.push({key:'r16', label:`${n()} - Final 16`, setup:(()=>{const ri=allRounds.indexOf(r);return()=>{obsRound=ri;render();};})()} );
     } else if(r.type==='qf'){
