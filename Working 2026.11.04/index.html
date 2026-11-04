@@ -150,6 +150,27 @@ h1,h2,h3,.display{font-family:'Bebas Neue',cursive;letter-spacing:0.06em;}
 }
 .crest-zone:hover{border-color:var(--gold);}
 .crest-zone img{width:100%;height:100%;object-fit:cover;border-radius:3px;}
+/* ── Flag picker ── */
+#flag-picker{position:fixed;inset:0;z-index:2000;display:none;align-items:center;justify-content:center;
+  background:rgba(0,0,0,0.7);padding:1rem;}
+#flag-picker .fp-box{background:var(--card);border:1px solid var(--border2);border-radius:12px;
+  width:min(760px,100%);max-height:88vh;display:flex;flex-direction:column;overflow:hidden;
+  box-shadow:0 10px 40px rgba(0,0,0,0.6);}
+#flag-picker .fp-hdr{display:flex;align-items:center;gap:0.6rem;padding:0.7rem 0.9rem;
+  border-bottom:1px solid var(--border);flex-wrap:wrap;}
+#flag-picker .fp-title{font-family:'Bebas Neue',cursive;font-size:1.2rem;letter-spacing:0.08em;color:var(--gold);}
+#flag-picker .fp-search{flex:1;min-width:140px;background:rgba(255,255,255,0.06);border:1px solid var(--border);
+  border-radius:6px;color:var(--text);padding:0.4rem 0.6rem;font-size:0.85rem;font-family:inherit;}
+#flag-picker .fp-grid{overflow-y:auto;padding:0.8rem;display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:0.6rem;}
+#flag-picker .fp-item{display:flex;flex-direction:column;align-items:center;gap:0.3rem;cursor:pointer;
+  padding:0.4rem 0.3rem;border-radius:8px;border:1.5px solid transparent;background:rgba(255,255,255,0.03);}
+#flag-picker .fp-item:hover{border-color:var(--gold);background:rgba(246,201,14,0.07);}
+#flag-picker .fp-item.sel{border-color:var(--win);}
+#flag-picker .fp-item img{width:72px;height:48px;object-fit:contain;}
+#flag-picker .fp-item span{font-size:0.68rem;text-align:center;line-height:1.15;word-break:break-word;color:var(--text);}
+#flag-picker .fp-msg{grid-column:1/-1;color:var(--muted);font-size:0.82rem;padding:1rem;text-align:center;line-height:1.5;}
+#flag-picker .fp-foot{padding:0.5rem 0.9rem;border-top:1px solid var(--border);font-size:0.7rem;color:var(--muted);}
 .player-input-row input[type=text]{
   background:transparent;border:none;outline:none;
   color:var(--text);font-family:'Barlow',sans-serif;font-size:0.88rem;width:100%;
@@ -382,6 +403,7 @@ h1,h2,h3,.display{font-family:'Bebas Neue',cursive;letter-spacing:0.06em;}
     <button class="nav-tab" onclick="showPage('tournament')">Tournament</button>
     <button class="nav-tab" onclick="showPage('standings')">Standings</button>
     <button class="nav-tab" onclick="showPage('pot')">⚰️ Knocked Out</button>
+    <button class="nav-tab" onclick="showPage('wheel')">🎡 Winner Draw</button>
   </div>
   <div id="nav-stage-badge" style="margin-left:auto;padding:0.5rem 0;display:none">
     <span class="trophy-badge tb-gold" id="stage-indicator">Group Stage</span>
@@ -501,13 +523,54 @@ h1,h2,h3,.display{font-family:'Bebas Neue',cursive;letter-spacing:0.06em;}
   <div style="padding-top:1rem" id="pot-content"></div>
 </div>
 
+<!-- ══ WINNER DRAW ══ -->
+<div id="page-wheel" class="page">
+  <div style="margin-bottom:1rem;text-align:center">
+    <h1 style="font-size:2rem;background:var(--grad-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">🎡 Winner Draw</h1>
+    <p style="color:var(--muted);font-size:0.9rem;margin-top:0.3rem">The OBS screen shows the wheel. Choose who's on it, then spin.</p>
+  </div>
+  <div id="wheel-page-content"></div>
+</div>
+
 </div><!-- /wrap -->
 
 <script>
 // ══════════════════════════════════════
+// SPECIAL TEAMS — edit this block
+// ──────────────────────────────────────
+// Any team whose name CONTAINS `match` (case-insensitive, even inside a longer name) gets:
+//   • displayName : shown instead of the real name on the EXPORTED IMAGE PACK only
+//   • logo        : forced as the team image everywhere (overrides any uploaded photo)
+//   • neverWin    : stays on the Winner Draw wheel but can never be picked as the winner
+// Put the logo files in the same folder as index.html / worldcup_obs.html.
+// ══════════════════════════════════════
+const SPECIAL_TEAMS = [
+  { match:'667',    displayName:'',    logo:'',    neverWin:true },
+  { match:'madcap', displayName:'', logo:'', neverWin:true },
+];
+function specialTeamByName(name){
+  const n=String(name||'').toLowerCase();
+  if(!n) return null;
+  return SPECIAL_TEAMS.find(t=>n.includes(String(t.match).toLowerCase()))||null;
+}
+function specialTeam(idx){ return specialTeamByName(players[idx]); }
+// Force logos into playerImages for matching teams (the OBS page reads these via wc_imgs)
+function applyTeamOverrides(){
+  if(!Array.isArray(players)) return;
+  players.forEach((name,i)=>{
+    const t=specialTeamByName(name);
+    if(t&&t.logo) playerImages[i]=t.logo;
+  });
+}
+// Tell the OBS page which names to swap on the exported images
+function publishSpecialTeams(){
+  try{ localStorage.setItem('wc_special',JSON.stringify(SPECIAL_TEAMS.map(t=>({match:t.match,displayName:t.displayName})))); }catch(e){}
+}
+
+// ══════════════════════════════════════
 // STATE
 // ══════════════════════════════════════
-const VALID_COUNTS = [16,20,24,28,32];
+const VALID_COUNTS = [16,24,32];
 let numPlayers = 16;
 let players = [];
 let playerImages = {};
@@ -563,6 +626,7 @@ let activeStandingsTab = 'pts';
 // PERSIST
 // ══════════════════════════════════════
 function saveState(){
+  applyTeamOverrides();publishSpecialTeams();
   const s={numPlayers,players,groupSchedule,groupScores,groups,knockout,knockoutScores,
            tiebreakers,
            tournamentGenerated,currentGroupRound,playerRoundScores,currentQERound};
@@ -574,7 +638,7 @@ function loadState(){
     const raw=localStorage.getItem('wc_state');
     if(raw){
       const s=JSON.parse(raw);
-      numPlayers=s.numPlayers||16;
+      numPlayers=VALID_COUNTS.includes(s.numPlayers)?s.numPlayers:16;
       players=s.players||[];
       groupSchedule=s.groupSchedule||[];
       groupScores=s.groupScores||{};
@@ -596,6 +660,7 @@ function loadState(){
     const imgs=localStorage.getItem('wc_imgs');
     if(imgs)playerImages=JSON.parse(imgs);
   }catch(e){}
+  applyTeamOverrides();
 }
 
 // ══════════════════════════════════════
@@ -647,7 +712,7 @@ function showPage(id){
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
   const tabs=document.querySelectorAll('.nav-tab');
-  ['setup','tournament','standings','pot'].forEach((pg,i)=>{if(pg===id&&tabs[i])tabs[i].classList.add('active');});
+  ['setup','tournament','standings','pot','wheel'].forEach((pg,i)=>{if(pg===id&&tabs[i])tabs[i].classList.add('active');});
   if(id==='tournament'&&tournamentGenerated){
     document.querySelectorAll('[data-stab]').forEach(t=>t.classList.toggle('active',t.dataset.stab===activeGroupTab));
     document.querySelectorAll('.stage-pane').forEach(p=>p.classList.toggle('active',p.id==='gp-'+activeGroupTab));
@@ -655,6 +720,7 @@ function showPage(id){
   }
   if(id==='standings'&&tournamentGenerated)renderStandings();
   if(id==='pot'&&tournamentGenerated)renderPot();
+  if(id==='wheel'){ if(tournamentGenerated) writeObsScreen('wheel'); renderWheelPage(); }
 }
 function switchGroupTab(id){
   activeGroupTab=id;
@@ -692,7 +758,132 @@ function setPlayerCount(n){
 }
 
 let _uploadIdx=-1;
+
+// ══════════════════════════════════════
+// FLAG PICKER — click a team's shield to choose from the flags folder or upload a file
+// Folder is listed from FLAGS_FOLDER + 'flags.json' (a JSON array of file names).
+// ══════════════════════════════════════
+const FLAGS_FOLDER = 'flags/';
+let _flagList = null;      // cached list of file names
+let _flagIdx  = -1;
+function flagLabel(file){
+  let n=file.replace(/\.[^.]+$/,'').replace(/^\s*\d+\s*-\s*/,'');   // drop extension and "01 - " prefix
+  if(/^[a-z0-9_-]+$/.test(n)) n=n.replace(/[-_]+/g,' ').replace(/(^|\s)([a-z])/g,(m,a,b)=>a+b.toUpperCase()); // slug-style names only
+  return n;
+}
+function flagSrc(file){
+  // encode everything URL-unsafe, including ' ( ) which would break url('...') in CSS
+  return FLAGS_FOLDER+encodeURIComponent(file).replace(/['()]/g,c=>'%'+c.charCodeAt(0).toString(16).toUpperCase());
+}
+async function loadFlagList(){
+  if(_flagList) return _flagList;
+  const res=await fetch(FLAGS_FOLDER+'flags.json',{cache:'no-cache'});
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  const data=await res.json();
+  const arr=(Array.isArray(data)?data:(data.files||[]))
+    .map(x=>typeof x==='string'?x:(x&&x.file))
+    .filter(f=>typeof f==='string'&&/\.(png|jpe?g|gif|svg|webp)$/i.test(f));
+  _flagList=arr.sort((a,b)=>flagLabel(a).localeCompare(flagLabel(b)));
+  return _flagList;
+}
+function refreshTeamImage(idx){
+  applyTeamOverrides();
+  const shown=playerImages[idx]||null;
+  const cz=document.getElementById(`wcz-${idx}`);
+  if(cz){
+    cz.innerHTML='';
+    if(shown){
+      const im=document.createElement('img');
+      im.src=shown;im.alt='';im.style.cssText='width:100%;height:100%;object-fit:cover;border-radius:3px';
+      cz.appendChild(im);
+    } else {
+      cz.innerHTML=`<span style="font-size:0.85rem;color:hsl(${(idx*137)%360},50%,55%)">🛡</span>`;
+    }
+  }
+  try{localStorage.setItem('wc_imgs',JSON.stringify(playerImages));}catch(e){}
+  updateImgCountLabel();
+  if(tournamentGenerated){renderGroupStage();renderKnockout();renderStandings();renderPot();}
+}
+function closeFlagPicker(){
+  const el=document.getElementById('flag-picker');
+  if(el) el.style.display='none';
+  _flagIdx=-1;
+}
+function pickFlag(file){
+  const idx=_flagIdx; if(idx<0) return;
+  playerImages[idx]=flagSrc(file);
+  closeFlagPicker();
+  refreshTeamImage(idx);
+}
+function openFlagPicker(idx){
+  _flagIdx=idx;
+  let el=document.getElementById('flag-picker');
+  if(!el){
+    el=document.createElement('div');
+    el.id='flag-picker';
+    el.innerHTML=`<div class="fp-box">
+      <div class="fp-hdr">
+        <span class="fp-title">Choose Team Image</span>
+        <input class="fp-search" id="fp-search" type="text" placeholder="Search flags…" autocomplete="off">
+        <button class="btn btn-sm" id="fp-upload">📁 Upload from computer</button>
+        <button class="btn btn-danger btn-sm" id="fp-remove">Remove image</button>
+        <button class="btn btn-sm" id="fp-close">✕</button>
+      </div>
+      <div class="fp-grid" id="fp-grid"></div>
+      <div class="fp-foot" id="fp-foot"></div>
+    </div>`;
+    document.body.appendChild(el);
+    el.addEventListener('click',e=>{ if(e.target===el) closeFlagPicker(); });
+    document.getElementById('fp-close').onclick=closeFlagPicker;
+    document.getElementById('fp-upload').onclick=()=>{
+      const i=_flagIdx; closeFlagPicker();
+      const shared=document.getElementById('wc-shared-crest');
+      if(shared&&i>=0){ _uploadIdx=i; shared.value=''; shared.click(); }
+    };
+    document.getElementById('fp-remove').onclick=()=>{
+      const i=_flagIdx; if(i<0) return;
+      delete playerImages[i]; closeFlagPicker(); refreshTeamImage(i);
+    };
+    document.getElementById('fp-search').addEventListener('input',()=>renderFlagGrid());
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&el.style.display!=='none') closeFlagPicker(); });
+  }
+  el.style.display='flex';
+  const name=players[idx]||`Team ${idx+1}`;
+  document.getElementById('fp-foot').textContent=`Choosing image for: ${name}`;
+  const search=document.getElementById('fp-search');
+  search.value='';
+  document.getElementById('fp-remove').style.display=playerImages[idx]?'':'none';
+  const grid=document.getElementById('fp-grid');
+  grid.innerHTML='<div class="fp-msg">Loading flags…</div>';
+  loadFlagList().then(()=>{renderFlagGrid();search.focus();}).catch(err=>{
+    grid.innerHTML=`<div class="fp-msg">Couldn't load <b>${FLAGS_FOLDER}flags.json</b> (${err.message}).<br>
+      Add a flags.json file listing the images in your flags folder, and open this page from your website
+      (not directly from a file). You can still use <b>Upload from computer</b>.</div>`;
+  });
+}
+function renderFlagGrid(){
+  const grid=document.getElementById('fp-grid');
+  if(!grid||!_flagList) return;
+  const q=(document.getElementById('fp-search').value||'').trim().toLowerCase();
+  const cur=playerImages[_flagIdx]||'';
+  const list=_flagList.filter(f=>!q||flagLabel(f).toLowerCase().includes(q)||f.toLowerCase().includes(q));
+  grid.innerHTML='';
+  if(!list.length){ grid.innerHTML='<div class="fp-msg">No flags match your search.</div>'; return; }
+  list.forEach(f=>{
+    const d=document.createElement('div');
+    d.className='fp-item'+(cur===flagSrc(f)?' sel':'');
+    d.title=flagLabel(f);
+    const im=document.createElement('img');
+    im.loading='lazy';im.alt='';im.src=flagSrc(f);
+    const sp=document.createElement('span');
+    sp.textContent=flagLabel(f);
+    d.appendChild(im);d.appendChild(sp);
+    d.onclick=()=>pickFlag(f);
+    grid.appendChild(d);
+  });
+}
 function buildPlayerInputs(){
+  applyTeamOverrides();
   const g=document.getElementById('player-inputs');
   g.innerHTML='';
   let shared=document.getElementById('wc-shared-crest');
@@ -715,8 +906,10 @@ function buildPlayerInputs(){
         canvas.getContext('2d').drawImage(img,0,0,w,h);
         const data=canvas.toDataURL('image/jpeg',0.9);
         playerImages[idx]=data;
+        applyTeamOverrides(); // special teams keep their logo even after an upload
+        const shown=playerImages[idx];
         const cz=document.getElementById(`wcz-${idx}`);
-        if(cz)cz.innerHTML=`<img src="${data}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:3px">`;
+        if(cz)cz.innerHTML=`<img src="${shown}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:3px">`;
         try{localStorage.setItem('wc_imgs',JSON.stringify(playerImages));}catch(e){}
         updateImgCountLabel();
         if(tournamentGenerated){renderGroupStage();renderKnockout();renderStandings();renderPot();}
@@ -738,10 +931,10 @@ function buildPlayerInputs(){
     glSpan.textContent=groupLabel(grp);
     // crest
     const cz=document.createElement('div');
-    cz.className='crest-zone';cz.id=`wcz-${i}`;cz.title='Upload team photo';
+    cz.className='crest-zone';cz.id=`wcz-${i}`;cz.title='Choose team flag / upload photo';
     if(src){const img=document.createElement('img');img.src=src;img.alt='';img.style.cssText='width:100%;height:100%;object-fit:cover;border-radius:3px';cz.appendChild(img);}
     else cz.innerHTML=`<span style="font-size:0.85rem;color:hsl(${hue},50%,55%)">🛡</span>`;
-    cz.addEventListener('click',(function(idx){return function(){_uploadIdx=idx;shared.value='';shared.click();};})(i));
+    cz.addEventListener('click',(function(idx){return function(){openFlagPicker(idx);};})(i));
     // num
     const numSpan=document.createElement('span');
     numSpan.className='player-num';
@@ -752,7 +945,14 @@ function buildPlayerInputs(){
     inp.type='text';inp.placeholder=`Team ${i+1}`;inp.id=`wp${i}`;
     inp.value=name;inp.maxLength=25;
     inp.addEventListener('input',(function(idx){return function(){
+      const wasSpecial=!!specialTeam(idx);
       players[idx]=this.value.trim();
+      if(wasSpecial!==!!specialTeam(idx)||specialTeam(idx)){
+        applyTeamOverrides();
+        const czEl=document.getElementById(`wcz-${idx}`);
+        if(czEl&&playerImages[idx]&&specialTeam(idx)) czEl.innerHTML=`<img src="${playerImages[idx]}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:3px">`;
+        updateImgCountLabel();
+      }
       // Clear error highlight on this row
       const row=this.closest('.player-input-row');
       if(row&&row.style.borderColor) row.style.borderColor='';
@@ -793,7 +993,7 @@ function updateImgCountLabel(){
   if(el)el.textContent=n?`${n} photo${n>1?'s':''} loaded`:'No photos loaded';
   if(btn)btn.style.display=n?'':'none';
 }
-function clearImages(){playerImages={};saveState();updateImgCountLabel();buildPlayerInputs();if(tournamentGenerated){renderGroupStage();renderKnockout();renderStandings();renderPot();}}
+function clearImages(){playerImages={};applyTeamOverrides();saveState();updateImgCountLabel();buildPlayerInputs();if(tournamentGenerated){renderGroupStage();renderKnockout();renderStandings();renderPot();}}
 function fillDefaults(){
   const names=['England','France','Germany','Brazil','Argentina','Spain','Portugal','Netherlands','Italy','Belgium','Croatia','Uruguay','Mexico','Colombia','Denmark','Senegal','Japan','Morocco','Australia','USA','South Korea','Switzerland','Ghana','Ecuador','Serbia','Poland','Cameroon','Wales','Costa Rica','Iran','Tunisia','Canada'];
   for(let i=0;i<numPlayers;i++)players[i]=names[i]||`Team ${i+1}`;
@@ -1512,7 +1712,7 @@ function renderGroupFixtures(){
   for(let r=0;r<totalR;r++){
     html+=`<div class="section-divider">Matchday ${r+1}</div>`;
     html+=`<div style="background:rgba(6,22,7,0.9);border:1px solid rgba(255,255,255,0.1);border-radius:10px;overflow:hidden;margin-bottom:1rem">
-      <table class="sched-table"><thead><tr>
+      <table class="sched-table"><colgroup><col style="width:10%"><col style="width:30%"><col style="width:15%"><col style="width:30%"><col style="width:15%"></colgroup><thead><tr>
         <th>Grp</th><th style="text-align:left">Home</th><th>Score</th><th style="text-align:left">Away</th><th>Pts</th>
       </tr></thead><tbody>`;
     const rm=groupSchedule.filter(m=>m.round===r);
@@ -1541,6 +1741,56 @@ function renderGroupFixtures(){
     });
     html+='</tbody></table></div>';
   }
+
+  // Knockout fixtures
+  const koSections=[
+    {label:'Quarter-Finals', matches:[
+      {key:'qf0',badge:'QF1',homeLabel:'Group A Winner',awayLabel:'Group B Runner-Up'},
+      {key:'qf1',badge:'QF2',homeLabel:'Group B Winner',awayLabel:'Group A Runner-Up'},
+      {key:'qf2',badge:'QF3',homeLabel:'Group C Winner',awayLabel:'Group D Runner-Up'},
+      {key:'qf3',badge:'QF4',homeLabel:'Group D Winner',awayLabel:'Group C Runner-Up'},
+    ]},
+    {label:'Semi-Finals', matches:[
+      {key:'sf0',badge:'SF1',homeLabel:'QF1 Winner',awayLabel:'QF2 Winner'},
+      {key:'sf1',badge:'SF2',homeLabel:'QF3 Winner',awayLabel:'QF4 Winner'},
+    ]},
+    {label:'3rd/4th Place Play-off & Final', matches:[
+      {key:'third',badge:'3rd/4th',homeLabel:'SF1 Loser',awayLabel:'SF2 Loser'},
+      {key:'final',badge:'Final',homeLabel:'SF1 Winner',awayLabel:'SF2 Winner'},
+    ]},
+  ];
+
+  koSections.forEach(section=>{
+    html+=`<div class="section-divider">${section.label}</div>`;
+    html+=`<div style="background:rgba(6,22,7,0.9);border:1px solid rgba(255,255,255,0.1);border-radius:10px;overflow:hidden;margin-bottom:1rem">
+      <table class="sched-table"><colgroup><col style="width:10%"><col style="width:30%"><col style="width:15%"><col style="width:30%"><col style="width:15%"></colgroup><thead><tr>
+        <th>Round</th><th style="text-align:left">Home</th><th>Score</th><th style="text-align:left">Away</th><th>Goals</th>
+      </tr></thead><tbody>`;
+    section.matches.forEach(({key,badge,homeLabel,awayLabel})=>{
+      const m=getKOMatch(key)||{home:null,away:null};
+      const s=knockoutScores[key]||{home:'',away:''};
+      const hName=m.home!==null?pName(m.home):homeLabel;
+      const aName=m.away!==null?pName(m.away):awayLabel;
+      const hS=s.home===''||s.home===undefined?null:parseInt(s.home);
+      const aS=s.away===''||s.away===undefined?null:parseInt(s.away);
+      const done=hS!==null&&aS!==null&&m.home!==null&&m.away!==null;
+      const scoreStr=done
+        ?`<span style="font-family:'Bebas Neue',cursive;font-size:1rem;color:var(--gold)">${hS} – ${aS}</span>`
+        :`<span style="color:var(--muted)">—</span>`;
+      const hGoals=done?`<span style="color:var(--win);font-weight:700">${hS}</span>/<span style="color:var(--muted)">${aS}</span>`
+        :`<span style="color:var(--muted)">—</span>`;
+      const badgeCol=key==='final'?'var(--gold)':key==='third'?'#cd7f32':'rgba(168,85,247,1)';
+      html+=`<tr>
+        <td><span style="font-family:'Bebas Neue',cursive;font-size:0.78rem;color:${badgeCol};background:${badgeCol}18;padding:0.1em 0.4em;border-radius:3px">${badge}</span></td>
+        <td><div style="display:flex;align-items:center;gap:0.4rem">${m.home!==null?crestHtml(m.home,18,3):''}<span style="font-weight:${m.home!==null?'600':'400'};color:${m.home!==null?'var(--text)':'var(--muted)'}">${esc(hName)}</span></div></td>
+        <td style="text-align:center">${scoreStr}</td>
+        <td><div style="display:flex;align-items:center;gap:0.4rem">${m.away!==null?crestHtml(m.away,18,3):''}${esc(aName)}</div></td>
+        <td style="text-align:center">${hGoals}</td>
+      </tr>`;
+    });
+    html+='</tbody></table></div>';
+  });
+
   cont.innerHTML=html;
 }
 
@@ -1787,10 +2037,12 @@ function renderQuickEntry(){
     const active = r===currentQERound;
     tabsHtml += `<button class="round-btn${active?' active':''}${done?' complete':''}"
       onclick="selectQERound(${r})">Round ${r+1}${done?' ✓':''}</button>`;
-    // Tables tab after each round
-    const tKey = `round-tables-${r}`;
-    tabsHtml += `<button class="round-btn${currentQERound===tKey?' active':''}"
-      onclick="selectQERound('${tKey}')" style="font-size:0.72rem;padding:0.28rem 0.55rem">📊</button>`;
+    // Tables tab after each round (skip after the last round — Group Tables shows the same data)
+    if(r < totalR-1){
+      const tKey = `round-tables-${r}`;
+      tabsHtml += `<button class="round-btn${currentQERound===tKey?' active':''}"
+        onclick="selectQERound('${tKey}')" style="font-size:0.72rem;padding:0.28rem 0.55rem">📊</button>`;
+    }
   }
 
   // Final Group Tables tab (all rounds)
@@ -1882,6 +2134,7 @@ function writeObsScreen(r){
   else if(r==='group-tables') screen = 'group-tables';
   else if(r==='results')      screen = 'results';
   else if(r==='goals')        screen = 'goals';
+  else if(r==='wheel')        screen = 'wheel';
   else if(typeof r==='string'&&r.startsWith('round-tables-')) screen = r;
   else if(typeof r==='number'&&r<totalR) screen = `group-${r}`;
   else {
@@ -1891,6 +2144,145 @@ function writeObsScreen(r){
     else            screen = 'final';
   }
   try{ localStorage.setItem('wc_obs_screen', screen); }catch(e){}
+}
+
+// ══════════════════════════════════════
+// WINNER WHEEL (control — wheel itself is on the OBS page)
+// ══════════════════════════════════════
+const WHEEL_SPIN_MS = 8000;
+const WHEEL_POOLS = [
+  {key:'all',      label:'All Teams',                                      sub:'Every team in the tournament'},
+  {key:'p4qfko',   label:'4th + QF Losers + Knocked Out',                  sub:'4th place, the four QF losers and every group-stage knocked-out team'},
+  {key:'p4qfko_x', label:'4th + QF Losers + Knocked Out — no top scorer',  sub:'As above, minus the highest scorer in the Knocked Out pot'},
+  {key:'ko',       label:'Knocked Out only',                               sub:'Teams that finished 3rd or lower in their group'},
+  {key:'ko_x',     label:'Knocked Out only — no top scorer',               sub:'Knocked Out teams, minus the highest scorer'},
+];
+let wheelPool = (()=>{ try{ return localStorage.getItem('wc_wheel_pool')||'all'; }catch(e){ return 'all'; } })();
+let wheelResult = null;        // {idx,label} once the OBS spin has finished
+let wheelSpinningUntil = 0;
+
+function getWheelPool(key){
+  propagateKnockout();
+  let entries=[], excluded=[], warn=[];
+  if(key==='all'){
+    entries = Array.from({length:numPlayers},(_,i)=>i);
+  } else {
+    const koIdx=[];
+    for(let g=0;g<4;g++) calcGroupStandings(g).slice(2).forEach(st=>koIdx.push(st.idx));
+    entries = koIdx.slice();
+    if(!koIdx.length || [0,1,2,3].some(g=>getGroupWinner(g)===null))
+      warn.push('Group stage isn\u2019t finished \u2014 the Knocked Out list is provisional.');
+    if(key==='p4qfko' || key==='p4qfko_x'){
+      const qfL=['qf0','qf1','qf2','qf3'].map(k=>getKOLoser(k));
+      const fourth=getKOLoser('third');
+      if(qfL.some(v=>v===null)) warn.push('Not all Quarter-Final losers are known yet.');
+      if(fourth===null) warn.push('4th place isn\u2019t decided yet.');
+      qfL.concat([fourth]).forEach(v=>{ if(v!==null) entries.push(v); });
+    }
+    if(key.endsWith('_x')){
+      const scored=koIdx.map(i=>({idx:i,goals:getPlayerTotalGoals(i)}));
+      const top=Math.max(0,...scored.map(x=>x.goals));
+      if(top>0){
+        excluded=scored.filter(x=>x.goals===top);
+        const ex=new Set(excluded.map(x=>x.idx));
+        entries=entries.filter(i=>!ex.has(i));
+      } else warn.push('No goals recorded yet \u2014 nobody is excluded.');
+    }
+  }
+  entries=Array.from(new Set(entries));
+  return {entries,excluded,warn};
+}
+
+function wheelPoolDef(){ return WHEEL_POOLS.find(p=>p.key===wheelPool)||WHEEL_POOLS[0]; }
+
+function publishWheelCfg(){
+  const p=wheelPoolDef();
+  const {entries}=getWheelPool(p.key);
+  try{ localStorage.setItem('wc_wheel_cfg', JSON.stringify({pool:p.key,label:p.label,entries})); }catch(e){}
+}
+
+function setWheelPool(key){
+  if(Date.now()<wheelSpinningUntil) return;
+  wheelPool=key; wheelResult=null;
+  try{ localStorage.setItem('wc_wheel_pool',key); }catch(e){}
+  renderWheelPage();
+}
+
+function spinWheel(){
+  if(Date.now()<wheelSpinningUntil) return;
+  const p=wheelPoolDef();
+  const {entries}=getWheelPool(p.key);
+  if(!entries.length) return;
+  // Protected teams stay on the wheel but can never be the winner
+  const eligible=entries.filter(i=>{ const t=specialTeam(i); return !(t&&t.neverWin); });
+  if(!eligible.length) return;
+  const buf=new Uint32Array(1); crypto.getRandomValues(buf);
+  const winner=eligible[buf[0]%eligible.length];
+  const cfg={pool:p.key,label:p.label,entries};
+  writeObsScreen('wheel');
+  try{
+    localStorage.setItem('wc_wheel_cfg', JSON.stringify(cfg));
+    localStorage.setItem('wc_wheel_spin', JSON.stringify({id:Date.now(),pool:p.key,label:p.label,entries,winner,ms:WHEEL_SPIN_MS}));
+  }catch(e){}
+  wheelResult=null;
+  wheelSpinningUntil=Date.now()+WHEEL_SPIN_MS+1200;
+  renderWheelPage();
+  setTimeout(()=>{
+    wheelResult={idx:winner,label:p.label};
+    renderWheelPage();
+  }, WHEEL_SPIN_MS+1200);
+}
+
+function renderWheelPage(){
+  const cont=document.getElementById('wheel-page-content');
+  if(!cont) return;
+  if(!tournamentGenerated){
+    cont.innerHTML='<div style="color:var(--muted);padding:2rem;text-align:center">Generate a tournament first.</div>';
+    return;
+  }
+  publishWheelCfg();
+  const spinning=Date.now()<wheelSpinningUntil;
+  const info=getWheelPool(wheelPoolDef().key);
+
+  const optHtml=WHEEL_POOLS.map(p=>{
+    const n=getWheelPool(p.key).entries.length;
+    return `<option value="${p.key}" ${p.key===wheelPool?'selected':''} style="background:#0d2a0f">${p.label} (${n})</option>`;
+  }).join('');
+
+  const names=info.entries.slice().sort((a,b)=>pName(a).localeCompare(pName(b)));
+  const chips=names.map(i=>`<span style="font-size:0.74rem;padding:0.15rem 0.55rem;border-radius:99px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1)">${esc(pName(i))}</span>`).join('');
+  const exHtml=info.excluded.length
+    ? `<div style="font-size:0.78rem;color:var(--lose);margin-bottom:0.5rem">Excluded (top scorer): ${info.excluded.map(x=>`${esc(pName(x.idx))} · ${x.goals} goals`).join(', ')}</div>` : '';
+  const warnHtml=info.warn.map(w=>`<div style="font-size:0.78rem;color:var(--draw);margin-bottom:0.35rem">⚠️ ${w}</div>`).join('');
+
+  let resultHtml='';
+  if(spinning){
+    resultHtml=`<div style="text-align:center;padding:0.9rem;color:var(--gold);font-family:'Bebas Neue',cursive;font-size:1.3rem;letter-spacing:0.1em">🎡 Spinning on OBS…</div>`;
+  } else if(wheelResult){
+    resultHtml=`<div style="display:flex;align-items:center;justify-content:center;gap:0.9rem;padding:0.9rem;border-radius:12px;background:rgba(246,201,14,0.07);border:1px solid rgba(246,201,14,0.35)">
+      <span style="font-size:1.6rem">🏆</span>
+      ${crestHtml(wheelResult.idx,44,5)}
+      <div>
+        <div style="font-family:'Bebas Neue',cursive;font-size:0.85rem;letter-spacing:0.15em;color:var(--gold)">Winner</div>
+        <div style="font-family:'Bebas Neue',cursive;font-size:1.7rem;line-height:1">${esc(pName(wheelResult.idx))}</div>
+      </div>
+    </div>`;
+  }
+
+  const hasEligible=info.entries.some(i=>{ const t=specialTeam(i); return !(t&&t.neverWin); });
+  const off=spinning||!info.entries.length||!hasEligible;
+  cont.innerHTML=`<div class="panel" style="max-width:640px;margin:0 auto">
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--muted);margin-bottom:0.4rem">Who's on the wheel</div>
+    <select ${spinning?'disabled':''} onchange="setWheelPool(this.value)"
+      style="width:100%;padding:0.7rem 0.9rem;border-radius:10px;font-size:1rem;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.04em;
+      background:rgba(6,22,7,0.95);color:var(--text);border:1px solid var(--gold);margin-bottom:1rem;${spinning?'opacity:0.5;':''}">${optHtml}</select>
+    <div style="font-family:'Bebas Neue',cursive;font-size:0.95rem;letter-spacing:0.1em;color:var(--muted);margin-bottom:0.5rem">In the draw · ${info.entries.length} team${info.entries.length===1?'':'s'}</div>
+    ${exHtml}${warnHtml}
+    <div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-bottom:1.1rem">${chips||'<span style="color:var(--muted);font-size:0.82rem">No teams in this draw yet.</span>'}</div>
+    <button class="btn btn-gold" ${off?'disabled':''} onclick="spinWheel()"
+      style="width:100%;padding:0.85rem;font-size:1.15rem;justify-content:center;${off?'opacity:0.45;cursor:not-allowed;':''}">🎡 Spin the Wheel</button>
+    <div style="margin-top:0.9rem">${resultHtml}</div>
+  </div>`;
 }
 
 function renderQERoundContent(r){
@@ -1935,6 +2327,7 @@ function renderQERoundContent(r){
       <p>The OBS screen is now showing the <strong style="color:var(--text)">Total Goals Leaderboard</strong>.</p>
     </div>`;
   }
+  if(r==='wheel'){ currentQERound=0; return renderQERoundContent(0); } // legacy saved state
   const koRounds = getKORoundsForQE();
   let storeKey, roundLabel, roundDesc;
 
